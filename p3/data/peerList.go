@@ -11,6 +11,7 @@ import (
 type PeerList struct {
 	selfId    int32
 	peerMap   map[string]int32
+	peerKeys  map[string]string
 	maxLength int32
 	mux       sync.Mutex
 }
@@ -20,6 +21,7 @@ func NewPeerList(id int32, maxLength int32) PeerList {
 	pList := PeerList{}
 
 	pList.peerMap = make(map[string]int32)
+	pList.peerKeys = make(map[string]string)
 	pList.selfId = id
 	pList.maxLength = maxLength
 
@@ -27,8 +29,8 @@ func NewPeerList(id int32, maxLength int32) PeerList {
 }
 
 //not sure if lock is needed, but used to be safe
-func (peers *PeerList) Add(addr string, id int32) {
-	//note, don't need to rebalance here
+func (peers *PeerList) Add(addr string, id int32, key string) {
+	//note, don't need to re-balance here
 
 	peers.mux.Lock()
 	defer peers.mux.Unlock()
@@ -39,8 +41,9 @@ func (peers *PeerList) Add(addr string, id int32) {
 		return
 	}
 
-	//add the new address to the peerMap
+	//add the new address to the peerMap, and the key  to peerKeys
 	peers.peerMap[addr] = id
+	peers.peerKeys[addr] = key
 
 }
 
@@ -50,12 +53,13 @@ func (peers *PeerList) Delete(addr string) {
 	defer peers.mux.Unlock()
 
 	delete(peers.peerMap, addr)
+	delete(peers.peerKeys, addr)
 
 }
 
 //not sure if lock is needed, but used to be safe
 func (peers *PeerList) Rebalance() {
-	//if the list is not longer that max (32), we do not need to rebalance
+	//if the list is not longer that max (32), we do not need to re-balance
 	if len(peers.peerMap) < int(peers.maxLength) {
 		return
 	}
@@ -65,6 +69,7 @@ func (peers *PeerList) Rebalance() {
 	defer peers.mux.Unlock()
 
 	newMap := map[string]int32{}
+	newKeys := map[string]string{}
 
 	//create a slice, from the Id's of all peers, plus the Id of this node
 	peerSlice := make([]int32, len(peers.peerMap))
@@ -141,6 +146,7 @@ func (peers *PeerList) Rebalance() {
 			if value == peerSlice[indToAdd] {
 				fmt.Println("\tAdding val to newMap:", key, value)
 				newMap[key] = value
+				newKeys[key] = peers.peerKeys[key]
 				break
 			}
 		}
@@ -149,6 +155,7 @@ func (peers *PeerList) Rebalance() {
 
 	//finally update the old map to equal the new map
 	peers.peerMap = newMap
+	peers.peerKeys = newKeys
 
 }
 
@@ -157,7 +164,7 @@ func (peers *PeerList) Show() string {
 
 	for key, value := range peers.peerMap {
 		valueStr := fmt.Sprint(value) //converts int32 to string
-		res += "\taddr=" + key + ", id=" + valueStr + "\n"
+		res += "\taddr=" + key + ", id=" + valueStr + ", public key=" + peers.peerKeys[key] + "\n"
 	}
 
 	return res
@@ -178,65 +185,107 @@ func (peers *PeerList) GetSelfId() int32 {
 
 //need to decide format of json based on piazza, will come back to these two later
 func (peers *PeerList) PeerMapToJson() (string, error) {
-	mapJson, err := json.Marshal(peers.peerMap)
+	mapJson, err1 := json.Marshal(peers.peerMap)
+	keysJson, err2 := json.Marshal(peers.peerKeys)
 
-	return string(mapJson), err
+	if err1 != nil {
+		return "", err1
+	} else if err2 != nil {
+		return "", err2
+	}
+
+	res := ""
+	res += `"map":"` + string(mapJson) + `",`
+	res += `"keys":"` + string(keysJson) + `",`
+	return "{" + res + "}", nil
 }
 
 func (peers *PeerList) InjectPeerMapJson(peerMapJsonStr string, selfAddr string) {
-	var newMap map[string]int32
-	err := json.Unmarshal([]byte(peerMapJsonStr), &newMap)
 
+	var jsonInterface map[string]interface{}
+
+	//converts the json string into an interface
+	err := json.Unmarshal([]byte(peerMapJsonStr), &jsonInterface)
+
+	//checks that it worked
 	if err != nil {
 		panic(err)
 	}
 
+	//gets peerMap from interface
+	mapInterface := jsonInterface["map"]
+	mapMap, success := mapInterface.(map[string]interface{})
+
+	if !success {
+		panic(mapInterface)
+	}
+
+	var newMap map[string]int32
+	for key, value := range mapMap {
+		newMap[key]=value.(int32)
+	}
+
+	//gets peerKeys from interface
+	keyInterface := jsonInterface["keys"]
+	keyMap, success := keyInterface.(map[string]interface{})
+
+	if !success {
+		panic(keyInterface)
+	}
+
+	var newKeys map[string]string
+	for key, value := range keyMap {
+		newKeys[key]=value.(string)
+	}
+
+
+	//adds both to PeerList
 	for key, value := range newMap {
 		//don't need to add our own address
 		if key != selfAddr {
-			peers.Add(key, value)
+			peers.Add(key, value, newKeys[key])
 		}
 	}
 }
 
 func TestPeerListRebalance() {
 	peers := NewPeerList(5, 4)
-	peers.Add("1111", 1)
-	peers.Add("4444", 4)
-	peers.Add("-1-1", -1)
-	peers.Add("0000", 0)
-	peers.Add("2121", 21)
+	peers.Add("1111", 1, "11")
+	peers.Add("4444", 4, "44")
+	peers.Add("-1-1", -1, "-1")
+	peers.Add("0000", 0, "00")
+	peers.Add("2121", 21, "21")
 	peers.Rebalance()
 	expected := NewPeerList(5, 4)
-	expected.Add("1111", 1)
-	expected.Add("4444", 4)
-	expected.Add("2121", 21)
-	expected.Add("-1-1", -1)
+	expected.Add("1111", 1, "11")
+	expected.Add("4444", 4, "44")
+	expected.Add("2121", 21, "21")
+	expected.Add("-1-1", -1, "-1")
 	fmt.Println(reflect.DeepEqual(peers, expected))
 
 	peers = NewPeerList(5, 2)
-	peers.Add("1111", 1)
-	peers.Add("4444", 4)
-	peers.Add("-1-1", -1)
-	peers.Add("0000", 0)
-	peers.Add("2121", 21)
+	peers.Add("1111", 1, "11")
+	peers.Add("4444", 4, "44")
+	peers.Add("-1-1", -1, "-1")
+	peers.Add("0000", 0, "00")
+	peers.Add("2121", 21, "21")
 	peers.Rebalance()
 	expected = NewPeerList(5, 2)
-	expected.Add("4444", 4)
-	expected.Add("2121", 21)
+	expected.Add("4444", 4, "44")
+	expected.Add("2121", 21, "21")
 	fmt.Println(reflect.DeepEqual(peers, expected))
 
 	peers = NewPeerList(5, 4)
-	peers.Add("1111", 1)
-	peers.Add("7777", 7)
-	peers.Add("9999", 9)
-	peers.Add("11111111", 11)
-	peers.Add("2020", 20)
+	peers.Add("1111", 1, "11")
+	peers.Add("7777", 7, "77")
+	peers.Add("9999", 9, "99")
+	peers.Add("11111111", 11, "1111")
+	peers.Add("2020", 20, "20")
 	peers.Rebalance()
 	expected = NewPeerList(5, 4)
-	expected.Add("1111", 1)
-	expected.Add("7777", 7)
-	expected.Add("9999", 9)
-	expected.Add("2020", 20)
+	peers.Add("1111", 1, "11")
+	peers.Add("7777", 7, "77")
+	peers.Add("9999", 9, "99")
+	peers.Add("2020", 20, "20")
 	fmt.Println(reflect.DeepEqual(peers, expected))
 }

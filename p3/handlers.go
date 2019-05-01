@@ -19,11 +19,12 @@ import (
 	"time"
 )
 
-var TA_SERVER = "http://localhost:6688"
-var REGISTER_SERVER = TA_SERVER + "/peer"
-var BC_DOWNLOAD_SERVER = TA_SERVER + "/upload"
+
+var TRUSTED_SERVER = "http://localhost:9901"
+var SELF_PUBLIC = ""
+var SELF_PRIVATE = ""
 var SELF_ADDR = "http://localhost:" + os.Args[1]
-var num0s = "000000"
+var NUM_0s = "000000"
 
 var SBC data.SyncBlockChain
 var Peers data.PeerList
@@ -100,7 +101,7 @@ func Download() {
 		//otherwise, download it from node 1
 
 		//hardcoded node1's url, not great
-		node1 := "http://localhost:9901"
+		node1 := TRUSTED_SERVER
 		request := "/upload"
 		parameters := "?address=" + SELF_ADDR + "&id=" + fmt.Sprint(Peers.GetSelfId())
 
@@ -203,7 +204,7 @@ func HeartBeatReceive(w http.ResponseWriter, r *http.Request) {
 	proofOfWork := sha3.Sum256([]byte(concatInfo))
 	powString := hex.EncodeToString(proofOfWork[:])
 
-	verified = strings.HasPrefix(powString, num0s)
+	verified = strings.HasPrefix(powString, NUM_0s)
 
 	if verified {
 		//add the node that we get the heartbeat from, and it's peers
@@ -403,7 +404,7 @@ func StartTryingNonces() {
 		proofOfWork := sha3.Sum256([]byte(concatInfo))
 		powString := hex.EncodeToString(proofOfWork[:])
 
-		validNonce = strings.HasPrefix(powString, num0s)
+		validNonce = strings.HasPrefix(powString, NUM_0s)
 
 		if validNonce {
 			//fmt.Println("hashing:", currHead.Header.Hash, "\n", nonce, "\n",  mpt.Root)
