@@ -1,17 +1,22 @@
 package data
 
 import (
+	"crypto/rsa"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math/big"
 	"reflect"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 )
 
 type PeerList struct {
 	selfId    int32
 	peerMap   map[string]int32
-	peerKeys  map[string]string
+	peerKeys  map[string]*rsa.PublicKey
 	maxLength int32
 	mux       sync.Mutex
 }
@@ -21,7 +26,7 @@ func NewPeerList(id int32, maxLength int32) PeerList {
 	pList := PeerList{}
 
 	pList.peerMap = make(map[string]int32)
-	pList.peerKeys = make(map[string]string)
+	pList.peerKeys = make(map[string]*rsa.PublicKey)
 	pList.selfId = id
 	pList.maxLength = maxLength
 
@@ -29,7 +34,7 @@ func NewPeerList(id int32, maxLength int32) PeerList {
 }
 
 //not sure if lock is needed, but used to be safe
-func (peers *PeerList) Add(addr string, id int32, key string) {
+func (peers *PeerList) Add(addr string, id int32, keyStr string) {
 	//note, don't need to re-balance here
 
 	peers.mux.Lock()
@@ -43,7 +48,17 @@ func (peers *PeerList) Add(addr string, id int32, key string) {
 
 	//add the new address to the peerMap, and the key  to peerKeys
 	peers.peerMap[addr] = id
+
+	key, err := stringToKey(keyStr)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
 	peers.peerKeys[addr] = key
+
+
+	fmt.Println("New PeerList: ", peers.Show())
 
 }
 
@@ -68,8 +83,8 @@ func (peers *PeerList) Rebalance() {
 	peers.mux.Lock()
 	defer peers.mux.Unlock()
 
-	newMap := map[string]int32{}
-	newKeys := map[string]string{}
+	newMap := make(map[string]int32)
+	newKeys := make(map[string]*rsa.PublicKey)
 
 	//create a slice, from the Id's of all peers, plus the Id of this node
 	peerSlice := make([]int32, len(peers.peerMap))
@@ -164,7 +179,7 @@ func (peers *PeerList) Show() string {
 
 	for key, value := range peers.peerMap {
 		valueStr := fmt.Sprint(value) //converts int32 to string
-		res += "\taddr=" + key + ", id=" + valueStr + ", public key=" + peers.peerKeys[key] + "\n"
+		res += "\taddr=" + key + ", id=" + valueStr + ", public key=" + KeyToString(peers.peerKeys[key]) + "\n"
 	}
 
 	return res
@@ -185,8 +200,16 @@ func (peers *PeerList) GetSelfId() int32 {
 
 //need to decide format of json based on piazza, will come back to these two later
 func (peers *PeerList) PeerMapToJson() (string, error) {
+
+	tmpMap := make(map[string]string)
+
+	for key, value := range peers.peerKeys {
+		tmpMap[key] = KeyToString(value)
+	}
+
+	//combination := map
 	mapJson, err1 := json.Marshal(peers.peerMap)
-	keysJson, err2 := json.Marshal(peers.peerKeys)
+	keysJson, err2 := json.Marshal(tmpMap)
 
 	if err1 != nil {
 		return "", err1
@@ -195,12 +218,14 @@ func (peers *PeerList) PeerMapToJson() (string, error) {
 	}
 
 	res := ""
-	res += `"map":"` + string(mapJson) + `",`
-	res += `"keys":"` + string(keysJson) + `",`
+	res += `"map": ` + string(mapJson) + `,`
+	res += `"keys": ` + string(keysJson) + ``
 	return "{" + res + "}", nil
 }
 
 func (peers *PeerList) InjectPeerMapJson(peerMapJsonStr string, selfAddr string) {
+
+	fmt.Println(peerMapJsonStr)
 
 	var jsonInterface map[string]interface{}
 
@@ -209,6 +234,7 @@ func (peers *PeerList) InjectPeerMapJson(peerMapJsonStr string, selfAddr string)
 
 	//checks that it worked
 	if err != nil {
+		fmt.Println(peerMapJsonStr)
 		panic(err)
 	}
 
@@ -220,9 +246,10 @@ func (peers *PeerList) InjectPeerMapJson(peerMapJsonStr string, selfAddr string)
 		panic(mapInterface)
 	}
 
-	var newMap map[string]int32
+	var newMap = make(map[string]int32)
 	for key, value := range mapMap {
-		newMap[key]=value.(int32)
+		//fmt.Println("\n\nkey:", key,"\nvalue:", value)
+		newMap[key]=int32(value.(float64))
 	}
 
 	//gets peerKeys from interface
@@ -233,8 +260,11 @@ func (peers *PeerList) InjectPeerMapJson(peerMapJsonStr string, selfAddr string)
 		panic(keyInterface)
 	}
 
-	var newKeys map[string]string
+	//fmt.Println("\n\n", keyMap)
+
+	var newKeys = make(map[string]string)
 	for key, value := range keyMap {
+		//fmt.Println("\n\nkey:", key,"\nvalue:", value)
 		newKeys[key]=value.(string)
 	}
 
@@ -246,6 +276,8 @@ func (peers *PeerList) InjectPeerMapJson(peerMapJsonStr string, selfAddr string)
 			peers.Add(key, value, newKeys[key])
 		}
 	}
+
+	//fmt.Println("New PeerList: ", peers.Show())
 }
 
 func TestPeerListRebalance() {
@@ -288,4 +320,39 @@ func TestPeerListRebalance() {
 	peers.Add("9999", 9, "99")
 	peers.Add("2020", 20, "20")
 	fmt.Println(reflect.DeepEqual(peers, expected))
+}
+
+func KeyToString(key *rsa.PublicKey) string {
+
+	fmt.Println(key)
+
+	e := fmt.Sprint(key.E)
+	n := key.N.String()
+
+	return e +":"+n
+}
+
+func stringToKey(keyString string) (*rsa.PublicKey, error){
+	fmt.Println(keyString)
+
+	slice := strings.Split(keyString, ":")
+
+	bigInt := new (big.Int)
+	fmt.Println(bigInt)
+	e, err1 := strconv.Atoi(slice[0])
+	n, err2 := new(big.Int).SetString(slice[1], 10)
+	//n, err2 := bigInt.SetString(slice[1], 10)
+
+
+	if err1 != nil || err2 == false{
+		return nil, errors.New("could_not_convert_key")
+	} else {
+
+		res := rsa.PublicKey{
+			N: n,
+			E: e,
+		}
+
+		return &res, nil
+	}
 }

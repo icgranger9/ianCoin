@@ -1,18 +1,19 @@
 package p3
 
 import (
-	"../p1"
 	"../p2"
 	"./data"
 	"bytes"
+	crand "crypto/rand"
+	"crypto/rsa"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"golang.org/x/crypto/sha3"
 	"io/ioutil"
-	"log"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -21,8 +22,8 @@ import (
 
 
 var TRUSTED_SERVER = "http://localhost:9901"
-var SELF_PUBLIC = ""
-var SELF_PRIVATE = ""
+var SELF_PUBLIC *rsa.PublicKey
+var SELF_PRIVATE *rsa.PrivateKey
 var SELF_ADDR = "http://localhost:" + os.Args[1]
 var NUM_0s = "000000"
 
@@ -39,7 +40,20 @@ func init() {
 
 // Register ID, download BlockChain, start HeartBeat
 func Start(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("Running start")
+	fmt.Println("Running Start")
+
+	//generate keys
+		//note: a real mine wouldn't need new keys every time, should have option to read in keys from file
+	var err error
+	SELF_PRIVATE, err = rsa.GenerateKey(crand.Reader, 2048)
+	if err != nil{
+		fmt.Println(err)
+		return
+	} else {
+		SELF_PUBLIC = &SELF_PRIVATE.PublicKey
+	}
+
+	//add self to peerlist, and download BC
 	Register()
 	Download()
 
@@ -68,30 +82,14 @@ func Register() {
 // Download blockchain from TA server
 func Download() {
 
-	if Peers.GetSelfId() == 1 {
+	if TRUSTED_SERVER == SELF_ADDR {
 		//if this is the first node, just create the blockchain
 		fmt.Println("\tAm node1, creating blockchain")
 
 		//create simple / random MPT
-		//same as in PrepareHeartBeatData()
-		mpt := p1.MerklePatriciaTrie{}
-		mpt.Initial()
-
-		dict := []string{"this", "is", "simple", "dictionary", "of", "words", "that", "can", "be", "added", "into", "our", "mtp", "I", "will", "now", "add", "many", "other", "options", "just", "to", "make", "it", "more", "random", "sound", "good?", "hello", "world", "golang", "USF", "computer", "science", "san", "francisco", "california", "america", "golden", "state", "warriors", "hopefully", "thats", "enough"}
-		mptSize := rand.Intn(len(dict)-1) + 1
-		fmt.Println("mpt size:", mptSize)
-
-		for wordsAdded := 0; wordsAdded < mptSize; wordsAdded++ {
-			randNum := rand.Intn(len(dict) - 1)
-			word := dict[randNum]
-
-			mpt.Insert(word, fmt.Sprint("word num:", wordsAdded))
-		}
-
-		//fmt.Println(mpt.String())
+		mpt := data.GenerateMPT()
 
 		var newBlock p2.Block
-
 		newBlock.Initial(0, "", "", mpt)
 
 		SBC.Insert(newBlock)
@@ -100,23 +98,72 @@ func Download() {
 		fmt.Println("\tGetting blockchain from node1")
 		//otherwise, download it from node 1
 
-		//hardcoded node1's url, not great
-		node1 := TRUSTED_SERVER
-		request := "/upload"
-		parameters := "?address=" + SELF_ADDR + "&id=" + fmt.Sprint(Peers.GetSelfId())
 
-		resp, err := http.Get(node1 + request + parameters)
+		//create URL, with params
+		baseUrl, err := url.Parse(TRUSTED_SERVER)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+
+		baseUrl.Path += "upload"
+
+		params := url.Values{}
+		params.Add("address", SELF_ADDR)
+		params.Add("id", fmt.Sprint(Peers.GetSelfId()))
+
+		pubKey := data.KeyToString(SELF_PUBLIC)
+		params.Add("key", pubKey)
+
+		baseUrl.RawQuery = params.Encode()
+
+		fmt.Println(baseUrl.String())
+		resp, err := http.Get(baseUrl.String())
 
 		if err != nil {
-			log.Fatalln(err)
+			fmt.Println(err)
+			return
 		}
 
 		body, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
-			log.Fatalln(err)
+			fmt.Println(err)
+			return
 		}
 
-		SBC.UpdateEntireBlockChain(string(body))
+		var jsonInterface map[string]interface{}
+
+		//converts the json string into an interface
+		err = json.Unmarshal([]byte(body), &jsonInterface)
+
+		//checks that it worked
+		if err != nil {
+			fmt.Println(body)
+			panic(err)
+		}
+
+		//gets blockchain from interface
+		bcInterface := jsonInterface["blockchain"]
+		bcJson, success := bcInterface.(string)
+
+		if !success {
+			fmt.Println(bcInterface)
+			return
+		}
+
+		//gets blockchain from interface
+		peersInterface := jsonInterface["peers"]
+		peersJson, success := peersInterface.(string)
+
+		if !success {
+			fmt.Println(peersInterface)
+			return
+		}
+
+		//update if everything is successful
+
+		SBC.UpdateEntireBlockChain(bcJson)
+		Peers.InjectPeerMapJson(peersJson, SELF_ADDR)
 
 	}
 
@@ -125,15 +172,18 @@ func Download() {
 }
 
 // Upload blockchain to whoever called this method, return jsonStr
-//updated to read address and id from URL parameters
+	//updated to read address and id from URL parameters
 func Upload(w http.ResponseWriter, r *http.Request) {
 
 	//handles adding new node to peerList
+
+	fmt.Println("url:", r.URL.String())
 	query := r.URL.Query()
 	address := query.Get("address")
 	id := query.Get("id")
+	pubKey := query.Get("key")
 
-	if id == "" || address == "" {
+	if id == "" || address == "" || pubKey==""{
 		fmt.Println("invalid address or id from upload parameters")
 		return
 	} else {
@@ -142,19 +192,28 @@ func Upload(w http.ResponseWriter, r *http.Request) {
 			fmt.Println("id could not be converted from string to int32")
 			return
 		} else {
-			fmt.Println("adding address: ", address, " and id: ", idInt32, " to peerList")
-			Peers.Add(address, int32(idInt32))
+			fmt.Println("adding address: ", address, " and id: ", idInt32, " to peerList with key:", pubKey)
+			Peers.Add(address, int32(idInt32), pubKey)
 		}
 	}
 
-	//returns blockchain
+	//returns blockchain, and peerlist, so nodes can add trusted_node to their peermaps
 	blockChainJson, err := SBC.BlockChainToJson()
 	if err != nil {
 		fmt.Println(err)
 		return
-		//data.PrintError(err, "Upload") //not sure if this is a function we were supposed to add, or what
 	}
-	fmt.Fprint(w, blockChainJson) //note, should we handle error?
+
+	peerListJson, err := Peers.PeerMapToJson()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	res := ""
+	res += `"blockchain": ` + string(blockChainJson) + `,`
+	res += `"peers": ` + string(peerListJson) + ``
+	fmt.Fprint(w, "{"+res+"}") //note, should we handle error?
 }
 
 // Upload a block to whoever called this method, return jsonStr
@@ -185,21 +244,39 @@ func HeartBeatReceive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var hBeat data.HeartBeatData
-	json.Unmarshal(jsonBody, &hBeat)
+	err =json.Unmarshal(jsonBody, &hBeat)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 
 	fmt.Println("got heartbeat from:", hBeat.Addr)
+	fmt.Println(hBeat)
+
+	//add the node that we get the heartbeat from, and it's peers
+	Peers.Add(hBeat.Addr, hBeat.Id, hBeat.PublicKey)
+	Peers.InjectPeerMapJson(hBeat.PeerMapJson, SELF_ADDR)
+
+	//no new block, do nothing else
+	if hBeat.IfNewBlock == false {
+		return
+	}
 
 	//verify heartbeat
 	verified := false
 
-	newBlock, _ := p2.DecodeFromJson(hBeat.BlockJson)
+	newBlock, err := p2.DecodeFromJson(hBeat.BlockJson)
+	if err != nil {
+		fmt.Println(hBeat.BlockJson)
+		fmt.Println("err2:", err)
+		return
+	}
 
 	parentHash := newBlock.Header.ParentHash
 	nonce := newBlock.Header.Nonce
 	mptHash := newBlock.Value.Root
 
 	concatInfo := parentHash + nonce + mptHash
-	//fmt.Println("hashing:", parentHash, "\n", nonce, "\n", mptHash)
 
 	proofOfWork := sha3.Sum256([]byte(concatInfo))
 	powString := hex.EncodeToString(proofOfWork[:])
@@ -208,7 +285,7 @@ func HeartBeatReceive(w http.ResponseWriter, r *http.Request) {
 
 	if verified {
 		//add the node that we get the heartbeat from, and it's peers
-		Peers.Add(hBeat.Addr, hBeat.Id)
+		Peers.Add(hBeat.Addr, hBeat.Id, hBeat.PublicKey)
 		Peers.InjectPeerMapJson(hBeat.PeerMapJson, SELF_ADDR)
 
 		//no new block, do nothing else
@@ -223,7 +300,6 @@ func HeartBeatReceive(w http.ResponseWriter, r *http.Request) {
 		}
 
 		//1
-		//note: Why are we only checking it's direct parent, shouldn't we check it's entire ancestary, to get any missing links
 		parentExists := SBC.CheckParentHash(block)
 		if parentExists == false {
 			fmt.Println("Parent doesn't exist")
@@ -328,7 +404,7 @@ func StartHeartBeat() {
 		} else {
 			heartBeatData := data.PrepareHeartBeatData(&SBC, Peers.GetSelfId(), PeersJson, SELF_ADDR)
 
-			url := "/heartbeat/receive"
+			urlAddress := "/heartbeat/receive"
 			httpType := "application/json"
 			hBeatJson, _ := json.Marshal(heartBeatData)
 
@@ -336,22 +412,21 @@ func StartHeartBeat() {
 
 			for keyAddr := range peerMap {
 
-				fmt.Println("sent heartbeat to:", keyAddr+url)
-				resp, err := http.Post(keyAddr+url, httpType, bytes.NewBuffer(hBeatJson))
-
+				fmt.Println("sent heartbeat to:", keyAddr+urlAddress)
+				_, err := http.Post(keyAddr+urlAddress, httpType, bytes.NewBuffer(hBeatJson))
 				//not really needed, since the response doesn't matter
 				if err != nil {
 					fmt.Println("Got an error in the response")
 					fmt.Println(err)
 				}
 
-				body, err := ioutil.ReadAll(resp.Body)
-				if err != nil {
-					fmt.Println("Got an error in reading the body")
-					fmt.Println(err)
-				} else {
-					fmt.Println("\tPrinting the response body: ", string(body))
-				}
+				//body, err := ioutil.ReadAll(resp.Body)
+				//if err != nil {
+				//	fmt.Println("Got an error in reading the body")
+				//	fmt.Println(err)
+				//} else {
+				//	fmt.Println("\tPrinting the response body: ", string(body))
+				//}
 
 			}
 		}
@@ -392,7 +467,14 @@ func StartTryingNonces() {
 	for calculateNonce {
 
 		//get block
-		currHead := SBC.GetLatestBlocks()[0]
+		currLatest := SBC.GetLatestBlocks()
+		var currHead p2.Block
+		if currLatest == nil {
+			fmt.Println("Nill latest for some reason")
+			return
+		} else {
+			currHead = currLatest[0]
+		}
 
 		//generate nonce
 		nonce := data.GenerateNonce()
