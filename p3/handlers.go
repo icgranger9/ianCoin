@@ -1,6 +1,7 @@
 package p3
 
 import (
+	"../p1"
 	"../p2"
 	"./data"
 	"bytes"
@@ -87,10 +88,16 @@ func Download() {
 		fmt.Println("\tAm node1, creating blockchain")
 
 		//create simple / random MPT
-		mpt := data.GenerateMPT()
+		var transactions p1.MerklePatriciaTrie
+		var balances p1.MerklePatriciaTrie
+
+		transactions.Initial()
+		balances.Initial()
+
+		balances.Insert(data.KeyToString(SELF_PUBLIC), "100") //gives initial node 100 ianCoins to start
 
 		var newBlock p2.Block
-		newBlock.Initial(0, "", "", mpt)
+		newBlock.Initial(0, "", "", transactions, balances)
 
 		SBC.Insert(newBlock)
 
@@ -277,9 +284,9 @@ func HeartBeatReceive(w http.ResponseWriter, r *http.Request) {
 
 	parentHash := newBlock.Header.ParentHash
 	nonce := newBlock.Header.Nonce
-	mptHash := newBlock.Value.Root
+	transactionsHash := newBlock.Transactions.Root
 
-	concatInfo := parentHash + nonce + mptHash
+	concatInfo := parentHash + nonce + transactionsHash
 
 	proofOfWork := sha3.Sum256([]byte(concatInfo))
 	powString := hex.EncodeToString(proofOfWork[:])
@@ -465,8 +472,9 @@ func StartTryingNonces() {
 
 	calculateNonce := true
 
-	//generate mpt
-	mpt := data.GenerateMPT()
+	//generates mpt. Should be replaced getting transactoins from pool, and adding those to the previous mpt
+	transactions := data.GenerateMPT()
+	balances := data.GenerateMPT()
 
 	for calculateNonce {
 
@@ -486,7 +494,7 @@ func StartTryingNonces() {
 		//test nonce
 		validNonce := false
 
-		concatInfo := currHead.Header.Hash + nonce + mpt.Root
+		concatInfo := currHead.Header.Hash + nonce + transactions.Root + balances.Root
 		proofOfWork := sha3.Sum256([]byte(concatInfo))
 		powString := hex.EncodeToString(proofOfWork[:])
 
@@ -495,7 +503,7 @@ func StartTryingNonces() {
 		if validNonce {
 			//fmt.Println("hashing:", currHead.Header.Hash, "\n", nonce, "\n",  mpt.Root)
 
-			newBlock := SBC.GenBlock(mpt, nonce)
+			newBlock := SBC.GenBlock(transactions, balances, nonce)
 			blockJson, _ := p2.EncodeToJSON(newBlock)
 			peersJson, _ := Peers.PeerMapToJson()
 

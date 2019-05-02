@@ -133,7 +133,7 @@ func (bChain *BlockChain) Show() string {
 		rs += "\n"
 	}
 	sum := sha3.Sum256([]byte(rs))
-	rs = fmt.Sprintf("This is the BlockChain: %s\n", hex.EncodeToString(sum[:])) + rs
+	rs = "This is the BlockChain: %s\n" + hex.EncodeToString(sum[:]) + rs
 	return rs
 }
 

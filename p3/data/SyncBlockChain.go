@@ -76,7 +76,7 @@ func (sbc *SyncBlockChain) BlockChainToJson() (string, error) {
 	return sbc.bc.EncodeChainToJSON()
 }
 
-func (sbc *SyncBlockChain) GenBlock(mpt p1.MerklePatriciaTrie, nonce string) p2.Block {
+func (sbc *SyncBlockChain) GenBlock(transactions p1.MerklePatriciaTrie, balances p1.MerklePatriciaTrie,nonce string) p2.Block {
 
 	height := sbc.bc.Height
 
@@ -87,7 +87,7 @@ func (sbc *SyncBlockChain) GenBlock(mpt p1.MerklePatriciaTrie, nonce string) p2.
 		parentHash = parents[0].Header.Hash
 	}
 
-	block := p2.GenBlock(height+1, parentHash, nonce, mpt)
+	block := p2.GenBlock(height+1, parentHash, nonce, transactions, balances)
 
 	fmt.Println(block.Show())
 

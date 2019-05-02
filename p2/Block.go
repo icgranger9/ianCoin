@@ -17,28 +17,32 @@ type Header struct {
 	Hash       string
 	ParentHash string
 	Nonce      string
-	Size       int32
+	SizeTransactions	int32
+	SizeBalances      	int32
 }
 
 type Block struct {
 	Header Header
-	Value  p1.MerklePatriciaTrie
+	Transactions  p1.MerklePatriciaTrie
+	Balances p1.MerklePatriciaTrie
 }
 
-func (b *Block) Initial(initHeight int32, initParentHash string, initNonce string, initValue p1.MerklePatriciaTrie) {
+func (b *Block) Initial(initHeight int32, initParentHash string, initNonce string, initTransactions p1.MerklePatriciaTrie, initBalances p1.MerklePatriciaTrie) {
 
 	//Assign header variables
 	b.Header.Height = initHeight
 	b.Header.Timestamp = time.Now().Unix()
 	b.Header.ParentHash = initParentHash
 	b.Header.Nonce = initNonce
-	b.Header.Size = int32(len([]byte(initValue.String()))) //converts mpt to string, changers that to byte array, gets length of array, and sets it to int32
+	b.Header.SizeTransactions = int32(len([]byte(initTransactions.String())))  //converts mpt to string, changers that to byte array, gets length of array, and sets it to int32
+	b.Header.SizeBalances = int32(len([]byte(initBalances.String())))  //converts mpt to string, changers that to byte array, gets length of array, and sets it to int32
+
 
 	//assign value
-	b.Value = initValue
+	b.Transactions = initTransactions
 
 	//get the hash, and assign it
-	hashStr := string(b.Header.Height) + string(b.Header.Timestamp) + b.Header.ParentHash + b.Value.Root + string(b.Header.Size)
+	hashStr := string(b.Header.Height) + string(b.Header.Timestamp) + b.Header.ParentHash + b.Transactions.Root + string(b.Header.SizeTransactions) + b.Balances.Root + string(b.Header.SizeBalances)
 	hashSum := sha3.Sum256([]byte(hashStr))
 	b.Header.Hash = hex.EncodeToString(hashSum[:])
 
@@ -53,23 +57,37 @@ func EncodeToJSON(b Block) (string, error) {
 	heightStr := `"height":` + fmt.Sprint(b.Header.Height) + `,`
 	parentStr := `"parentHash":"` + b.Header.ParentHash + `",`
 	nonceStr := `"nonce":"` + b.Header.Nonce + `",`
-	sizeStr := `"size":` + fmt.Sprint(b.Header.Size) + `,`
+	sizeTrStr := `"sizeTransactions":` + fmt.Sprint(b.Header.SizeTransactions) + `,`
+	sizeAccStr :=`"sizeBalances":` + fmt.Sprint(b.Header.SizeBalances) + `,`
+	//mpts harder to convert
+	transactionStr := `"transactionMpt":{`
 
-	//mpt harder to convert
-	mptStr := `"mpt":{`
-
-	//add each (key, value) to mptStr
+	//add each (key, value) to transactionStr
 	//remove last comma, and add closing }
-	keyValue := b.Value.KeyVal
-	for key, value := range keyValue {
-		mptStr += `"` + key + `":"` + value + `", `
+	transactionsValue := b.Transactions.KeyVal
+	for key, value := range transactionsValue {
+		transactionStr += `"` + key + `":"` + value + `", `
 	}
 
-	mptStr = strings.TrimSuffix(mptStr, ", ")
-	mptStr += `}`
+	transactionStr = strings.TrimSuffix(transactionStr, ", ")
+	transactionStr += `},`
+
+	BalanceStr := `"balancesMpt":{`
+
+	//add each (key, value) to transactionStr
+	//remove last comma, and add closing }
+	BalancesValue := b.Balances.KeyVal
+	for key, value := range BalancesValue {
+		BalanceStr += `"` + key + `":"` + value + `", `
+	}
+
+	BalanceStr = strings.TrimSuffix(BalanceStr, ", ")
+	BalanceStr += `},`
+
+
 
 	//add everything together, and return
-	res := "{" + hashStr + timeStr + heightStr + parentStr + nonceStr + sizeStr + mptStr + "}"
+	res := "{" + hashStr + timeStr + heightStr + parentStr + nonceStr + sizeTrStr + transactionStr + sizeAccStr+ BalanceStr+ "}"
 	return res, nil
 }
 
@@ -86,30 +104,47 @@ func DecodeFromJson(jsonStr string) (Block, error) {
 		return blck, err
 	}
 
-	//create the mpt, and insert all values from map
-	mptInterface := jsonInterface["mpt"]
-	mptMap, success := mptInterface.(map[string]interface{})
+	//create the transaction mpt, and insert all values from map
+	transactionInterface := jsonInterface["transactionMpt"]
+	transactionMap, success := transactionInterface.(map[string]interface{})
 
 	if !success {
-		fmt.Println(mptInterface)
-		return blck, errors.New("failed_to_decode_mpt")
+		fmt.Println(transactionInterface)
+		return blck, errors.New("failed_to_decode_TransactionMpt")
 	}
 
-	var mpt p1.MerklePatriciaTrie
-	mpt.Initial()
-	for key, value := range mptMap {
-		mpt.Insert(key, value.(string))
+	var transactionMpt p1.MerklePatriciaTrie
+	transactionMpt.Initial()
+	for key, value := range transactionMap {
+		transactionMpt.Insert(key, value.(string))
+	}
+
+	//create the balances mpt, and insert all values from map
+	balancesInterface := jsonInterface["balancesMpt"]
+	balancesMap, success := balancesInterface.(map[string]interface{})
+
+	if !success {
+		fmt.Println(balancesInterface)
+		return blck, errors.New("failed_to_decode_balancesMpt")
+	}
+
+	var balancesMpt p1.MerklePatriciaTrie
+	balancesMpt.Initial()
+	for key, value := range balancesMap {
+		balancesMpt.Insert(key, value.(string))
 	}
 
 	//assign all values to block
 	//note: theoretically we should check for failure on every type cast, but it shouldn't be necessary
-	blck.Header.Size = int32(jsonInterface["size"].(float64))
+	blck.Header.SizeTransactions = int32(jsonInterface["sizeTransactions"].(float64))
+	blck.Header.SizeBalances = int32(jsonInterface["sizeBalances"].(float64))
 	blck.Header.Height = int32(jsonInterface["height"].(float64))
 	blck.Header.Timestamp = int64(jsonInterface["timeStamp"].(float64))
 	blck.Header.Hash = jsonInterface["hash"].(string)
 	blck.Header.ParentHash = jsonInterface["parentHash"].(string)
 	blck.Header.Nonce = jsonInterface["nonce"].(string)
-	blck.Value = mpt
+	blck.Transactions = transactionMpt
+	blck.Balances = balancesMpt
 
 	//fmt.Println(blck)
 
@@ -118,9 +153,9 @@ func DecodeFromJson(jsonStr string) (Block, error) {
 
 // ---------------- Added for p3 ----------------
 
-func GenBlock(initHeight int32, initParentHash string, initNonce string, initValue p1.MerklePatriciaTrie) Block {
+func GenBlock(initHeight int32, initParentHash string, initNonce string, initTransactions p1.MerklePatriciaTrie, initBalances p1.MerklePatriciaTrie) Block {
 	newBlock := Block{}
-	newBlock.Initial(initHeight, initParentHash, initNonce, initValue)
+	newBlock.Initial(initHeight, initParentHash, initNonce, initTransactions, initBalances)
 
 	return newBlock
 }
@@ -132,9 +167,10 @@ func (b *Block) Show() string {
 	timestamp := "timestamp=" + fmt.Sprint(b.Header.Timestamp) + ", "
 	hash := "hash=" + b.Header.Hash + ", "
 	parentHash := "parentHash=" + b.Header.ParentHash + ", "
-	size := "size=" + fmt.Sprint(b.Header.Size) + "\n"
+	sizeTrn := "size of transactions=" + fmt.Sprint(b.Header.SizeTransactions) + ","
+	sizeAcc := "size of Balances=" + fmt.Sprint(b.Header.SizeBalances) + "\n"
 
-	res = height + timestamp + hash + parentHash + size
+	res = height + timestamp + hash + parentHash + sizeTrn + sizeAcc
 
 	return res
 }
