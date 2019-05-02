@@ -82,12 +82,13 @@ func EncodeToJSON(b Block) (string, error) {
 	}
 
 	BalanceStr = strings.TrimSuffix(BalanceStr, ", ")
-	BalanceStr += `},`
+	BalanceStr += `}`
 
 
 
 	//add everything together, and return
 	res := "{" + hashStr + timeStr + heightStr + parentStr + nonceStr + sizeTrStr + transactionStr + sizeAccStr+ BalanceStr+ "}"
+
 	return res, nil
 }
 
