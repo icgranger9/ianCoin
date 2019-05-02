@@ -66,7 +66,7 @@ func Show(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "%s\n%s", Peers.Show(), SBC.Show())
 }
 
-// Register to TA's server, get an ID
+// Register to Trusted server
 func Register() {
 
 	//Should connect to TA's server to get unique ID
@@ -130,10 +130,12 @@ func Download() {
 			return
 		}
 
+		fmt.Println("body: ", string(body))
+
 		var jsonInterface map[string]interface{}
 
 		//converts the json string into an interface
-		err = json.Unmarshal([]byte(body), &jsonInterface)
+		err = json.Unmarshal(body, &jsonInterface)
 
 		//checks that it worked
 		if err != nil {
@@ -143,28 +145,28 @@ func Download() {
 
 		//gets blockchain from interface
 		bcInterface := jsonInterface["blockchain"]
-		bcJson, success := bcInterface.(string)
+		bcJson, err := json.Marshal(bcInterface)
 
-		if !success {
+		if err != nil {
 			fmt.Println("invalid blockchain:",bcInterface)
 			return
 		} else {
-			fmt.Println("bc json:", bcJson)
+			fmt.Println("bc json:", string(bcJson))
 		}
 
 		//gets blockchain from interface
 		peersInterface := jsonInterface["peers"]
-		peersJson, success := peersInterface.(string)
+		peersJson, err := json.Marshal(peersInterface)
 
-		if !success {
+		if err != nil {
 			fmt.Println(peersInterface)
 			return
 		}
 
 		//update if everything is successful
 
-		SBC.UpdateEntireBlockChain(bcJson)
-		Peers.InjectPeerMapJson(peersJson, SELF_ADDR)
+		SBC.UpdateEntireBlockChain(string(bcJson))
+		Peers.InjectPeerMapJson(string(peersJson), SELF_ADDR)
 
 	}
 
@@ -212,8 +214,8 @@ func Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	res := ""
-	res += `"blockchain": ` + string(blockChainJson) + `,`
-	res += `"peers": ` + string(peerListJson) + ``
+	res += `"blockchain": ` + blockChainJson + `,`
+	res += `"peers": ` + peerListJson
 	fmt.Fprint(w, "{"+res+"}") //note, should we handle error?
 }
 
@@ -339,7 +341,7 @@ func AskForBlock(height int32, hash string) {
 			fmt.Println(err)
 		}
 
-		body, err := ioutil.ReadAll(resp.Body)
+		body, err := ioutil.ReadAll(resp.Body) // occasionally gives error, look into it
 		if err != nil {
 			fmt.Println(err)
 		} else {
@@ -505,4 +507,18 @@ func StartTryingNonces() {
 		}
 
 	}
+}
+
+// ---------------- Added for p5 ----------------
+
+func TansactionReceive(w http.ResponseWriter, r *http.Request){
+
+}
+
+func TansactionForward(w http.ResponseWriter, r *http.Request){
+
+}
+
+func TansactionCreate(w http.ResponseWriter, r *http.Request){
+
 }

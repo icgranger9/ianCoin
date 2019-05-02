@@ -8,7 +8,7 @@ Create a cryptocurrency (ianCoin) which allows for creation of new accounts (wal
 #### Goals ####
 Completed
 * Fix any bugs in my code from p1 – p4
-* Establish a base form of consensus
+* Establish a base form of consensus (Proof of Work)
 * Add public and private keys, and a way to transfer them between nodes
 
 In Progress
@@ -18,7 +18,7 @@ In Progress
 
 Too
 * Update transactions to only become final after 3 blocks
-* Add sum of fees to miner’s reward
+* Add sum of fees to miner’s reward````
 * Update PoW, so difficulty scales with number of transactions
 
 

@@ -225,8 +225,6 @@ func (peers *PeerList) PeerMapToJson() (string, error) {
 
 func (peers *PeerList) InjectPeerMapJson(peerMapJsonStr string, selfAddr string) {
 
-	//fmt.Println(peerMapJsonStr)
-
 	var jsonInterface map[string]interface{}
 
 	//converts the json string into an interface
