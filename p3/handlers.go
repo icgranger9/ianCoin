@@ -117,7 +117,6 @@ func Download() {
 
 		baseUrl.RawQuery = params.Encode()
 
-		fmt.Println(baseUrl.String())
 		resp, err := http.Get(baseUrl.String())
 
 		if err != nil {
@@ -147,8 +146,10 @@ func Download() {
 		bcJson, success := bcInterface.(string)
 
 		if !success {
-			fmt.Println(bcInterface)
+			fmt.Println("invalid blockchain:",bcInterface)
 			return
+		} else {
+			fmt.Println("bc json:", bcJson)
 		}
 
 		//gets blockchain from interface
@@ -167,7 +168,7 @@ func Download() {
 
 	}
 
-	fmt.Println(SBC.BlockChainToJson())
+	//fmt.Println(SBC.BlockChainToJson())
 
 }
 
@@ -192,7 +193,7 @@ func Upload(w http.ResponseWriter, r *http.Request) {
 			fmt.Println("id could not be converted from string to int32")
 			return
 		} else {
-			fmt.Println("adding address: ", address, " and id: ", idInt32, " to peerList with key:", pubKey)
+			fmt.Println("adding address: ", address, " and id: ", idInt32, "with peer key")
 			Peers.Add(address, int32(idInt32), pubKey)
 		}
 	}
@@ -250,8 +251,8 @@ func HeartBeatReceive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Println("got heartbeat from:", hBeat.Addr)
-	fmt.Println(hBeat)
+	//fmt.Println("got heartbeat from:", hBeat.Addr)
+	//fmt.Println("with key:", hBeat.PublicKey)
 
 	//add the node that we get the heartbeat from, and it's peers
 	Peers.Add(hBeat.Addr, hBeat.Id, hBeat.PublicKey)
@@ -361,6 +362,7 @@ func AskForBlock(height int32, hash string) {
 	}
 }
 
+//not need to reduce life on hop
 func ForwardHeartBeat(heartBeatData data.HeartBeatData) {
 	url := "/heartbeat/receive"
 	httpType := "application/json"
@@ -402,7 +404,7 @@ func StartHeartBeat() {
 		if err != nil {
 			fmt.Println(err)
 		} else {
-			heartBeatData := data.PrepareHeartBeatData(&SBC, Peers.GetSelfId(), PeersJson, SELF_ADDR)
+			heartBeatData := data.PrepareHeartBeatData(&SBC, Peers.GetSelfId(), PeersJson, SELF_ADDR, data.KeyToString(SELF_PUBLIC))
 
 			urlAddress := "/heartbeat/receive"
 			httpType := "application/json"
@@ -495,7 +497,7 @@ func StartTryingNonces() {
 			blockJson, _ := p2.EncodeToJSON(newBlock)
 			peersJson, _ := Peers.PeerMapToJson()
 
-			hBeat := data.NewHeartBeatData(true, Peers.GetSelfId(), blockJson, peersJson, SELF_ADDR)
+			hBeat := data.NewHeartBeatData(true, Peers.GetSelfId(), blockJson, peersJson, SELF_ADDR, data.KeyToString(SELF_PUBLIC))
 
 			ForwardHeartBeat(hBeat)
 			fmt.Println("found valid nonce")

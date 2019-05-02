@@ -58,7 +58,7 @@ func (peers *PeerList) Add(addr string, id int32, keyStr string) {
 	peers.peerKeys[addr] = key
 
 
-	fmt.Println("New PeerList: ", peers.Show())
+	//fmt.Println("New PeerList: ", peers.Show())
 
 }
 
@@ -225,7 +225,7 @@ func (peers *PeerList) PeerMapToJson() (string, error) {
 
 func (peers *PeerList) InjectPeerMapJson(peerMapJsonStr string, selfAddr string) {
 
-	fmt.Println(peerMapJsonStr)
+	//fmt.Println(peerMapJsonStr)
 
 	var jsonInterface map[string]interface{}
 
@@ -324,7 +324,7 @@ func TestPeerListRebalance() {
 
 func KeyToString(key *rsa.PublicKey) string {
 
-	fmt.Println(key)
+	//fmt.Println(key)
 
 	e := fmt.Sprint(key.E)
 	n := key.N.String()
@@ -333,15 +333,13 @@ func KeyToString(key *rsa.PublicKey) string {
 }
 
 func stringToKey(keyString string) (*rsa.PublicKey, error){
-	fmt.Println(keyString)
+	//fmt.Println(keyString)
 
 	slice := strings.Split(keyString, ":")
 
-	bigInt := new (big.Int)
-	fmt.Println(bigInt)
+
 	e, err1 := strconv.Atoi(slice[0])
 	n, err2 := new(big.Int).SetString(slice[1], 10)
-	//n, err2 := bigInt.SetString(slice[1], 10)
 
 
 	if err1 != nil || err2 == false{
