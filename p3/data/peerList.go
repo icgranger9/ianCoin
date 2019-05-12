@@ -2,14 +2,13 @@ package data
 
 import (
 	"crypto/rsa"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"math/big"
+	"os"
 	"reflect"
 	"sort"
-	"strconv"
-	"strings"
 	"sync"
 )
 
@@ -51,7 +50,7 @@ func (peers *PeerList) Add(addr string, id int32, keyStr string) {
 
 	key, err := stringToKey(keyStr)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Fprintf(os.Stderr, "Error adding key, in pList add: %v\n", err)
 		return
 	}
 
@@ -112,7 +111,7 @@ func (peers *PeerList) Rebalance() {
 
 	//while we can add new Id's
 	for len(newMap) < int(peers.maxLength) {
-		fmt.Println("Inside loop, len:", len(newMap))
+		//fmt.Println("Inside loop, len:", len(newMap))
 		//find the closest Id, and add to new map
 
 		//used to avoid repeated code. This is the index if the id that will be added to the map
@@ -159,7 +158,7 @@ func (peers *PeerList) Rebalance() {
 				break
 			}
 			if value == peerSlice[indToAdd] {
-				fmt.Println("\tAdding val to newMap:", key, value)
+				//fmt.Println("\tAdding val to newMap:", key, value)
 				newMap[key] = value
 				newKeys[key] = peers.peerKeys[key]
 				break
@@ -322,33 +321,52 @@ func TestPeerListRebalance() {
 
 func KeyToString(key *rsa.PublicKey) string {
 
-	//fmt.Println(key)
+	bytes := x509.MarshalPKCS1PublicKey(key)
+	res := base64.URLEncoding.EncodeToString(bytes)
 
-	e := fmt.Sprint(key.E)
-	n := key.N.String()
+	return res
 
-	return e +":"+n
+	// --- old implementation ---
+
+	//e := fmt.Sprint(key.E)
+	//n := key.N.String()
+	//
+	//return e +":"+n
 }
 
 func stringToKey(keyString string) (*rsa.PublicKey, error){
-	//fmt.Println(keyString)
 
-	slice := strings.Split(keyString, ":")
-
-
-	e, err1 := strconv.Atoi(slice[0])
-	n, err2 := new(big.Int).SetString(slice[1], 10)
-
-
-	if err1 != nil || err2 == false{
-		return nil, errors.New("could_not_convert_key")
-	} else {
-
-		res := rsa.PublicKey{
-			N: n,
-			E: e,
-		}
-
-		return &res, nil
+	bytes, err := base64.URLEncoding.DecodeString(keyString)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error decoding string in strToKey: %v\n", err)
+		return nil, err
 	}
+	resKey, err2 :=x509.ParsePKCS1PublicKey(bytes)
+	if err2 != nil {
+		fmt.Fprintf(os.Stderr, "ErrorParsing bytes to key in strToKey: %v\n", err2)
+		return nil, err
+	}
+
+	return resKey, nil
+
+	// --- old implementation ---
+
+	//slice := strings.Split(keyString, ":")
+	//
+	//
+	//e, err1 := strconv.Atoi(slice[0])
+	//n, err2 := new(big.Int).SetString(slice[1], 10)
+	//
+	//
+	//if err1 != nil || err2 == false{
+	//	return nil, errors.New("could_not_convert_key")
+	//} else {
+	//
+	//	res := rsa.PublicKey{
+	//		N: n,
+	//		E: e,
+	//	}
+	//
+	//	return &res, nil
+	//}
 }

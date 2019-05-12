@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
 	"os"
 )
 
@@ -47,7 +48,7 @@ func (tAction *Transaction) SignTransaction(privateKey *rsa.PrivateKey) error {
 	sig, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, hashBytes[:])
 
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error from signing: %s\n", err)
+		fmt.Fprintf(os.Stderr, "Error from signing: %v\n", err)
 		return err
 	} else {
 		tAction.Signature = base64.URLEncoding.EncodeToString(sig)
@@ -61,7 +62,7 @@ func (tAction *Transaction) HashTransaction() string {
 	str += tAction.Destination +":"
 	str += fmt.Sprint(tAction.Amount) +":"
 	str += fmt.Sprint(tAction.Fee) +":"
-	str += fmt.Sprint(tAction.TimeToLive) +":"
+	//str += fmt.Sprint(tAction.TimeToLive) +":" //note: should ttl really be part of the hash?
 	str += tAction.Timestamp
 
 	sum := sha256.Sum256([]byte(str))
@@ -108,28 +109,28 @@ func (tAction *Transaction) VerifyTransaction() bool {
 		pubKey, err1 := stringToKey(tAction.Source)
 
 		if err1 != nil {
-			fmt.Fprintf(os.Stderr, "Error getting key in validation: %s\n", err1)
+			fmt.Fprintf(os.Stderr, "Error getting key in validation: %v\n", err1)
 			return false
 		}
 
 		hash := tAction.HashTransaction()
 		hashBytes, err2 :=base64.URLEncoding.DecodeString(hash)
 		if err2 != nil {
-			fmt.Fprintf(os.Stderr, "Error decoding hash in validation: %s\n", err1)
+			fmt.Fprintf(os.Stderr, "Error decoding hash in validation: %v\n", err2)
 			return false
 		}
 
 		sig, err3 := base64.URLEncoding.DecodeString(tAction.Signature)
 
 		if err3 != nil {
-			fmt.Fprintf(os.Stderr, "Error decoding signature in validation: %s\n", err1)
+			fmt.Fprintf(os.Stderr, "Error decoding signature in validation: %v\n", err3)
 			return false
 		}
 
 		err4 := rsa.VerifyPKCS1v15(pubKey, crypto.SHA256, hashBytes, sig)
 
 		if err4 != nil{
-			fmt.Fprintf(os.Stderr, "Error from validation: %s\n", err1)
+			fmt.Fprintf(os.Stderr, "Error from validation: %v\n", err4)
 			validSignature = false
 		} else {
 			validSignature = true

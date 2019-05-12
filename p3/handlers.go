@@ -29,8 +29,10 @@ var SELF_ADDR = "http://localhost:" + os.Args[1]
 var NUM_0s = "000000"
 
 var SBC data.SyncBlockChain
+var TRANSACTION_POOL []data.Transaction
 var Peers data.PeerList
-var ifStarted bool
+var ifStarted bool //is this really needed as a global variable
+
 
 func init() {
 	// This function will be executed before everything else.
@@ -96,7 +98,7 @@ func Download() {
 
 		balances.Insert(data.KeyToString(SELF_PUBLIC), "100") //gives initial node 100 ianCoins to start
 
-		fmt.Println("Balances", balances.Order_nodes())
+		//fmt.Println("Balances", balances.Order_nodes())
 
 		var newBlock p2.Block
 		newBlock.Initial(0, "", "", transactions, balances)
@@ -139,7 +141,7 @@ func Download() {
 			return
 		}
 
-		fmt.Println("body: ", string(body))
+		//fmt.Println("body: ", string(body))
 
 		var jsonInterface map[string]interface{}
 
@@ -159,8 +161,6 @@ func Download() {
 		if err != nil {
 			fmt.Println("invalid blockchain:",bcInterface)
 			return
-		} else {
-			fmt.Println("bc json:", string(bcJson))
 		}
 
 		//gets blockchain from interface
@@ -189,7 +189,7 @@ func Upload(w http.ResponseWriter, r *http.Request) {
 
 	//handles adding new node to peerList
 
-	fmt.Println("url:", r.URL.String())
+	//fmt.Println("url:", r.URL.String())
 	query := r.URL.Query()
 	address := query.Get("address")
 	id := query.Get("id")
@@ -284,16 +284,17 @@ func HeartBeatReceive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	//get all variables needed to compute the hash
 	parentHash := newBlock.Header.ParentHash
 	nonce := newBlock.Header.Nonce
 	transactionsHash := newBlock.Transactions.Root
-
 	concatInfo := parentHash + nonce + transactionsHash
 
+	//use that hash to check the proof of work
 	proofOfWork := sha3.Sum256([]byte(concatInfo))
 	powString := hex.EncodeToString(proofOfWork[:])
 
-	verified = strings.HasPrefix(powString, NUM_0s)
+	verified = strings.HasPrefix(powString, NUM_0s) //difficult here, because they both need to agree on the number of 0's
 
 	if verified {
 		//add the node that we get the heartbeat from, and it's peers
@@ -387,12 +388,12 @@ func ForwardHeartBeat(heartBeatData data.HeartBeatData) {
 
 		//not really needed, since the response doesn't matter
 		if err != nil {
-			fmt.Println(err)
+			fmt.Fprintf(os.Stderr, "Error did not get response in forwardHearBeat: %v\n", err)
 		}
 
-		body, err := ioutil.ReadAll(resp.Body)
+		body, err2 := ioutil.ReadAll(resp.Body)
 		if err != nil {
-			fmt.Println(err)
+			fmt.Fprintf(os.Stderr, "Error could not read response in forwardHearBeat: %v\n", err2)
 		} else {
 			fmt.Println(string(body))
 		}
@@ -429,8 +430,7 @@ func StartHeartBeat() {
 				_, err := http.Post(keyAddr+urlAddress, httpType, bytes.NewBuffer(hBeatJson))
 				//not really needed, since the response doesn't matter
 				if err != nil {
-					fmt.Println("Got an error in the response")
-					fmt.Println(err)
+					fmt.Fprintf(os.Stderr, "Error in response in startTransaction: %v\n", err)
 				}
 
 				//body, err := ioutil.ReadAll(resp.Body)
@@ -484,7 +484,7 @@ func StartTryingNonces() {
 		currLatest := SBC.GetLatestBlocks()
 		var currHead p2.Block
 		if currLatest == nil {
-			fmt.Println("Nill latest for some reason")
+			fmt.Fprintf(os.Stderr, "Error getting latest block in TryingNonces\n")
 			return
 		} else {
 			currHead = currLatest[0]
@@ -521,14 +521,68 @@ func StartTryingNonces() {
 
 // ---------------- Added for p5 ----------------
 
-func TansactionReceive(w http.ResponseWriter, r *http.Request){
+func ReceiveTransaction(w http.ResponseWriter, r *http.Request){
+	jsonBody, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error with json in recieveTransaction: %v\n", err)
+		return
+	}
+
+	tAction, err2 := data.DecodeTransactionFromJson(string(jsonBody))
+	if err2 != nil {
+		fmt.Fprintf(os.Stderr, "Error decodingJson in recieveTransaction: %v\n", err2)
+		return
+	}
+
+	//verify transaction
+	verified := tAction.VerifyTransaction()
+
+	if verified==false{
+		fmt.Fprintf(os.Stderr, "Error With invalid transaction in recieveTransaction\n" )
+		return
+	}
+
+	//add to pool
+	TRANSACTION_POOL = append(TRANSACTION_POOL, tAction)
+
+	//reduce ttl
+	tAction.TimeToLive = tAction.TimeToLive-1
+	if tAction.TimeToLive <= 0{
+		return
+	} else {
+		//forward to peers
+		ForwardTransaction(tAction)
+	}
 
 }
 
-func TansactionForward(w http.ResponseWriter, r *http.Request){
 
+func CreateTransaction(w http.ResponseWriter, r *http.Request){
+	//what should this look like? Who creates the transaction, do they need to know all keys, or dest, or anything else?
 }
 
-func TansactionCreate(w http.ResponseWriter, r *http.Request){
+func ForwardTransaction(tAction data.Transaction){
+	url := "/transaction/receive"
+	httpType := "application/json"
+	tActionJson, _ := tAction.TransactionToJson()
 
+	peerMap := Peers.Copy()
+
+	for keyAddr := range peerMap {
+
+		resp, err := http.Post(keyAddr+url, httpType, bytes.NewBuffer([]byte(tActionJson)))
+
+		//not really needed, since the response doesn't matter
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error did not get response in forwardHearBeat: %v\n", err)
+		}
+
+		body, err2 := ioutil.ReadAll(resp.Body)
+		if err2 != nil {
+			fmt.Fprintf(os.Stderr, "Error could not read response in forwardHearBeat: %v\n", err)
+		} else {
+			fmt.Println(string(body))
+		}
+
+	}
 }

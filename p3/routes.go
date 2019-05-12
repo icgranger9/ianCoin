@@ -50,4 +50,20 @@ var routes = Routes{
 		"/canonical",
 		Canonical,
 	},
+
+	// ---------------- Added for p5 ----------------
+	Route{
+		"CreateTransaction",
+		"POST",
+		"/transaction/create",
+		CreateTransaction,
+	},
+
+	Route{
+		"ReceiveTransaction",
+		"POST",
+		"/transaction/receive",
+		ReceiveTransaction,
+	},
+
 }
