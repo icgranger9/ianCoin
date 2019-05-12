@@ -40,6 +40,7 @@ func (b *Block) Initial(initHeight int32, initParentHash string, initNonce strin
 
 	//assign value
 	b.Transactions = initTransactions
+	b.Balances = initBalances
 
 	//get the hash, and assign it
 	hashStr := string(b.Header.Height) + string(b.Header.Timestamp) + b.Header.ParentHash + b.Transactions.Root + string(b.Header.SizeTransactions) + b.Balances.Root + string(b.Header.SizeBalances)
@@ -147,7 +148,7 @@ func DecodeFromJson(jsonStr string) (Block, error) {
 	blck.Transactions = transactionMpt
 	blck.Balances = balancesMpt
 
-	//fmt.Println(blck)
+	fmt.Println(blck)
 
 	return blck, nil
 }
@@ -168,8 +169,8 @@ func (b *Block) Show() string {
 	timestamp := "timestamp=" + fmt.Sprint(b.Header.Timestamp) + ", "
 	hash := "hash=" + b.Header.Hash + ", "
 	parentHash := "parentHash=" + b.Header.ParentHash + ", "
-	sizeTrn := "size of transactions=" + fmt.Sprint(b.Header.SizeTransactions) + ","
-	sizeAcc := "size of Balances=" + fmt.Sprint(b.Header.SizeBalances) + "\n"
+	sizeTrn := "Transactions=" + b.Transactions.Order_nodes() + ","
+	sizeAcc := "Balances=" + b.Balances.Order_nodes() + "\n"
 
 	res = height + timestamp + hash + parentHash + sizeTrn + sizeAcc
 

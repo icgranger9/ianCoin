@@ -8,7 +8,7 @@ Create a cryptocurrency (ianCoin) which allows for creation of new accounts (wal
 #### Goals ####
 Completed
 * Fix any bugs in my code from p1 – p4
-* Establish a base form of consensus (Proof of Work)
+* Establish a base form of consensus (Nakamoto Consensus + Proof of Work)
 * Add public and private keys, and a way to transfer them between nodes
 * create two MPT’s, and add to block: one to store transactions, and one to store wallet balance
 
@@ -16,7 +16,7 @@ In Progress
 * Add base functionality: wallet creations, and transfer between wallets
 * Add reward to creation of new canonical block
 
-Too
+To Do
 * Update transactions to only become final after 3 blocks
 * Add sum of fees to miner’s reward
 * Update PoW, so difficulty scales with number of transactions

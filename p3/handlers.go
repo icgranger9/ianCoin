@@ -96,6 +96,8 @@ func Download() {
 
 		balances.Insert(data.KeyToString(SELF_PUBLIC), "100") //gives initial node 100 ianCoins to start
 
+		fmt.Println("Balances", balances.Order_nodes())
+
 		var newBlock p2.Block
 		newBlock.Initial(0, "", "", transactions, balances)
 
