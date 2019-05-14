@@ -3,7 +3,8 @@ package data
 import (
 	"../../p2"
 	"fmt"
-	)
+	"os"
+)
 
 type HeartBeatData struct {
 	IfNewBlock  bool   `json:"ifNewBlock"`
@@ -35,13 +36,13 @@ func PrepareHeartBeatData(sbc *SyncBlockChain, selfId int32, peerMapJson string,
 
 
 	if latest == nil {
-		fmt.Println("couldn't prepare heartbeat")
+		fmt.Fprintln(os.Stderr, "Couldn't  get latest in prepareHeartbeat")
 		blockJson = ""
 	} else {
 		var err error
 		blockJson, err = p2.EncodeToJSON(latest[0])
 		if err != nil {
-			fmt.Println(err)
+			fmt.Fprintf(os.Stderr, "Error encoding to json in PrepareHeartBeatData: %v\n", err)
 			return HeartBeatData{}
 		}
 	}

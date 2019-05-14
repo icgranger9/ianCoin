@@ -28,7 +28,7 @@ type MerklePatriciaTrie struct {
 
 func (mpt *MerklePatriciaTrie) Get(key string) (string, error) {
 
-	fmt.Println(mpt.db)
+	fmt.Println("In mpt.Get, with mpt of:", mpt.Order_nodes())
 
 	var hexKey []uint8
 
@@ -48,7 +48,6 @@ func (mpt *MerklePatriciaTrie) Get(key string) (string, error) {
 
 	ind := len(hexKey)
 	for ind >= 0 {
-		//fmt.Println("In for loop with key: ", hexKey, " and ind: ", ind, " and node: ", nextNode.String())
 
 		switch nextNode.node_type {
 		case 1:
@@ -202,8 +201,6 @@ func (mpt *MerklePatriciaTrie) Delete(key string) (string, error) {
 
 func compact_encode(hex_array []uint8) []uint8 {
 
-	//fmt.Println("Encode SRT: ", hex_array)
-
 	var res, tmp []uint8
 	var term int
 
@@ -224,8 +221,6 @@ func compact_encode(hex_array []uint8) []uint8 {
 	flag := (2 * term) + oddlen
 	flags := []uint8{uint8(flag)}
 
-	//fmt.Println("flag: ", flag)
-
 	//add those two to the front of the arr
 	if oddlen != 0 {
 		tmp = append(flags, new_array...)
@@ -242,9 +237,6 @@ func compact_encode(hex_array []uint8) []uint8 {
 	//more complex enxoding using hex functions, should fully implement
 	//res = make([]byte, hex.DecodedLen(len(tmp)))
 	//_,err := hex.Decode(res, tmp)
-
-	//fmt.Println("Encode TMP: ", tmp)
-	//fmt.Println("Encode RES: ", res, "\n")
 
 	if len(res) == 0 {
 		fmt.Println(" ------------------------ Encoded arr is empty")
@@ -280,9 +272,6 @@ func compact_decode(encoded_arr []uint8) []uint8 {
 	//	res = append(res, 16)
 	//}
 
-	//fmt.Println("Decode SRT: ", encoded_arr)
-	//fmt.Println("Decode TMP: ", tmp)
-	//fmt.Println("Decode RES: ", res, "\n")
 	return res
 }
 
@@ -364,6 +353,12 @@ func (mpt *MerklePatriciaTrie) String() string {
 }
 
 func (mpt *MerklePatriciaTrie) Order_nodes() string {
+
+	//quick fix, to add printing of empty MPTs
+	if mpt.Root == ""{
+		return "MPT is empty"
+	}
+
 	raw_content := mpt.String()
 	content := strings.Split(raw_content, "\n")
 	root_hash := strings.Split(strings.Split(content[0], "HashStart")[1], "HashEnd")[0]
@@ -401,11 +396,6 @@ func (mpt *MerklePatriciaTrie) Order_nodes() string {
 //note: should this be called on the mpt, or just a function called inside the original insert?
 func recursive_insert(mpt *MerklePatriciaTrie, parentNode Node, childNode Node) string {
 
-	//prints to better keep track of everything
-	//fmt.Println("\nParent Node: ", parentNode.String())
-	//fmt.Println(  "Child Node: ", childNode.String())
-	//fmt.Println("Trie: ", mpt.Order_nodes())
-
 	//switch to handle each node type in a new way
 	switch parentNode.node_type {
 	case 0:
@@ -420,7 +410,6 @@ func recursive_insert(mpt *MerklePatriciaTrie, parentNode Node, childNode Node) 
 		valueInBranch := parentNode.branch_value[decodedPrefixChild[0]]
 
 		if valueInBranch == "" {
-			//if childNode.node_type ==1 {fmt.Println("ADD BRANCH TO BRANCH")} else if childNode.flag_value.encoded_prefix[0]/16 > 1 {fmt.Println("ADD LEAF TO BRANCH")} else{ fmt.Println("ADD EXT TO BRANCH")}
 
 			// no collision with another node, simply ensure it is a leaf, and add to the branch
 
@@ -440,7 +429,6 @@ func recursive_insert(mpt *MerklePatriciaTrie, parentNode Node, childNode Node) 
 
 			if childNode.flag_value.encoded_prefix[0]/16 < 2 && len(remainder) == 0 {
 				//if the child is an empty ext, move one down
-				//fmt.Println("\tskipped empty ext")
 
 				extChild := mpt.db[childNode.flag_value.value]
 				parentNode.branch_value[prefix] = extChild.hash_node()
@@ -459,7 +447,6 @@ func recursive_insert(mpt *MerklePatriciaTrie, parentNode Node, childNode Node) 
 
 		} else {
 			//there is collision with another node, check how much, to see if a branch or extension must be made
-			//fmt.Println("MUST DEAL WITH COLLISION")
 
 			//get the node that we are overlapping with
 			nodeInBranch := mpt.db[valueInBranch]
@@ -500,10 +487,8 @@ func recursive_insert(mpt *MerklePatriciaTrie, parentNode Node, childNode Node) 
 			// check if either prefix is empty.
 			if len(decodedPrefixParent) == 0 || len(decodedPrefixChild) == 0 {
 				//must deal with if parent or is empty
-				//fmt.Println("MUST CREATE BRANCH WITH VALUE")
 
 				if len(decodedPrefixParent) == 0 && len(decodedPrefixChild) == 0 {
-					//fmt.Println("\tNVM, MUST OVERWRITE PARENT")
 
 					parentNode.flag_value.value = childNode.flag_value.value
 					parentHash := parentNode.hash_node()
@@ -529,7 +514,6 @@ func recursive_insert(mpt *MerklePatriciaTrie, parentNode Node, childNode Node) 
 
 			} else if decodedPrefixParent[0] == decodedPrefixChild[0] {
 				//check if there is overlap between the two nodes, if so must create extension node
-				//fmt.Println("MUST CREATE EXT")
 
 				//see how much overlap there is
 				overlap := 0
@@ -540,7 +524,6 @@ func recursive_insert(mpt *MerklePatriciaTrie, parentNode Node, childNode Node) 
 				}
 
 				if len(decodedPrefixParent) == overlap && len(decodedPrefixChild) == overlap {
-					//fmt.Println("COMPLETE OVERLQP, MUST OVERWRITE PARENT")
 
 					parentNode.flag_value.value = childNode.flag_value.value
 					parentHash := parentNode.hash_node()
@@ -573,13 +556,11 @@ func recursive_insert(mpt *MerklePatriciaTrie, parentNode Node, childNode Node) 
 
 				//recursively call insert, to create a branch
 				newExt.flag_value.value = recursive_insert(mpt, parentNode, childNode)
-				//fmt.Println("\tCreated ext")
 
 				mpt.db[newExt.hash_node()] = newExt
 				return newExt.hash_node()
 
 			} else {
-				//fmt.Println("MUST CREATE BRANCH")
 				//must create branch node
 				branch := create_branch("")
 
@@ -596,7 +577,6 @@ func recursive_insert(mpt *MerklePatriciaTrie, parentNode Node, childNode Node) 
 				//mpt.db[childNode.hash_node()] = childNode
 
 				//return hash of branch node
-				//fmt.Println("\tCreated branch and added leaves")
 				return branchHash
 
 			}
@@ -619,7 +599,6 @@ func recursive_insert(mpt *MerklePatriciaTrie, parentNode Node, childNode Node) 
 			// know there will be no conflict because overlap is 0
 			if overlap == 0 {
 				//no overlap between ext and other node
-				//fmt.Println("MUST ADD BRANCH ABOVE EXT")
 
 				//three cases
 				//parent (ext) is empty
@@ -692,7 +671,6 @@ func recursive_insert(mpt *MerklePatriciaTrie, parentNode Node, childNode Node) 
 
 			} else if len(decodedPrefixParent) == overlap {
 				//if they overlap completely, remove prefix from child, and add child to branch under ext
-				//fmt.Println("MUST ADD CHILD BELOW EXT")
 
 				decodedPrefixChild = decodedPrefixChild[overlap:]
 
@@ -726,7 +704,6 @@ func recursive_insert(mpt *MerklePatriciaTrie, parentNode Node, childNode Node) 
 			} else {
 				//if only partially, shrink ext, add branch, add branch under ext to new branch, and add child to new branch
 				//must also update prefixes of both
-				//fmt.Println("MUST ADJUST EXT")
 
 				newExt := create_ext(decodedPrefixParent[:overlap])
 
@@ -814,16 +791,12 @@ func recursive_insert(mpt *MerklePatriciaTrie, parentNode Node, childNode Node) 
 
 func recursive_delete(mpt *MerklePatriciaTrie, parentNode Node, childNode Node) string {
 
-	//fmt.Println("\nParent Node: ", parentNode.String())
-	//fmt.Println(  "Child Value: ", compact_decode(childNode.flag_value.encoded_prefix))
-
 	switch parentNode.node_type {
 	case 0:
 		//hopefully never a null node
 		fmt.Println("---------------------------------> NULL NODE Encountered in delete")
 	case 1:
 		//if value of branch, delete it
-		// fmt.Println("\nPrint Trie\n", mpt.Order_nodes())
 
 		if childNode.node_type == 0 {
 			numInBranch := 0
@@ -849,7 +822,6 @@ func recursive_delete(mpt *MerklePatriciaTrie, parentNode Node, childNode Node) 
 
 				if numInBranch == 1 {
 					shrink_branch(mpt, parentOfBranch, branchChild, parentNode, branchVal)
-					//fmt.Println("Trie:\n", mpt.Order_nodes())
 				}
 				//otherwise, we're done
 				return parentOfBranch.hash_node()
@@ -861,18 +833,12 @@ func recursive_delete(mpt *MerklePatriciaTrie, parentNode Node, childNode Node) 
 
 				//re-encodes the child, and gets the correct next node
 				childNode.flag_value.encoded_prefix = compact_encode(append(remainder, 16)) //technically shouldn't add 16 since it's not a leaf, but it needs something
-				//fmt.Println("\tDECODED CHILD : ", decodedChildPrefix)
-				//fmt.Println("\tNEXT VAL : ", nextVal)
-				//fmt.Println("\tREMAINDER: ", remainder)
+
 
 				nextNode := mpt.db[parentNode.branch_value[nextVal]] //note, do we need to double check that the child is actually in the branch, or can we assume
 
-				//fmt.Println("\tNEXT HASH: ", nextNode.hash_node())
-				//fmt.Println("\tNEXT NODE: ", nextNode.String())
 
 				newParent := mpt.db[recursive_delete(mpt, nextNode, childNode)]
-
-				//fmt.Println("New parent: ", newParent.String())
 
 				parentOfBranch := update_parent(mpt, newParent, newParent.hash_node())
 				var branchChild Node
@@ -889,7 +855,6 @@ func recursive_delete(mpt *MerklePatriciaTrie, parentNode Node, childNode Node) 
 				if numInBranch == 1 {
 					newNode := shrink_branch(mpt, parentOfBranch, branchChild, newParent, branchVal)
 
-					//fmt.Println(mpt.Order_nodes())
 					return newNode.hash_node()
 				}
 
@@ -920,8 +885,6 @@ func recursive_delete(mpt *MerklePatriciaTrie, parentNode Node, childNode Node) 
 
 			if areEq {
 				newParent := update_parent(mpt, parentNode, "")
-
-				//fmt.Println("Trie: ", mpt.Order_nodes())
 
 				mpt.db[newParent.hash_node()] = newParent
 
@@ -969,10 +932,6 @@ func shrink_branch(mpt *MerklePatriciaTrie, branchParent Node, branchChild Node,
 	//   ext - null - ext 		: merge ext's
 	//   ext - null - leaf 		: merge everything
 
-	//fmt.Println("\n\tin shrink branch, with parent :")
-	//fmt.Println("\twith parent:", branchParent.String())
-	//fmt.Println("\twith child :", branchChild.String())
-	//fmt.Println("\tand branch :", branch.String())
 
 	//used in update_parent at bottom
 	originalParentHash := branchParent.hash_node()
@@ -1100,8 +1059,6 @@ func shrink_branch(mpt *MerklePatriciaTrie, branchParent Node, branchChild Node,
 
 			} else {
 
-				//fmt.Println("\tMerging two ext's")
-
 				decodedPrefixParent := compact_decode(branchParent.flag_value.encoded_prefix)
 				decodedPrefixChild := compact_decode(branchChild.flag_value.encoded_prefix)
 
@@ -1126,7 +1083,6 @@ func shrink_branch(mpt *MerklePatriciaTrie, branchParent Node, branchChild Node,
 }
 
 func update_parent(mpt *MerklePatriciaTrie, childNode Node, newChildHash string) Node {
-	//fmt.Println("In update parent, with node: ", childNode.String(), " and hash ", newChildHash)
 	//updates the hash value of the parent, and all it's parents
 
 	//update root when needed
@@ -1148,7 +1104,6 @@ func update_parent(mpt *MerklePatriciaTrie, childNode Node, newChildHash string)
 			for c := 0; c < len(node.branch_value)-1; c++ {
 
 				if node.branch_value[c] == childNode.hash_node() {
-					//fmt.Println("Found child in branch of node: ", node.String())
 					originalHash := node.hash_node()
 
 					node.branch_value[c] = newChildHash

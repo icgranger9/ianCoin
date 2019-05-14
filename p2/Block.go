@@ -111,7 +111,6 @@ func DecodeFromJson(jsonStr string) (Block, error) {
 	transactionMap, success := transactionInterface.(map[string]interface{})
 
 	if !success {
-		fmt.Println(transactionInterface)
 		return blck, errors.New("failed_to_decode_TransactionMpt")
 	}
 
@@ -126,7 +125,6 @@ func DecodeFromJson(jsonStr string) (Block, error) {
 	balancesMap, success := balancesInterface.(map[string]interface{})
 
 	if !success {
-		fmt.Println(balancesInterface)
 		return blck, errors.New("failed_to_decode_balancesMpt")
 	}
 
@@ -148,8 +146,6 @@ func DecodeFromJson(jsonStr string) (Block, error) {
 	blck.Transactions = transactionMpt
 	blck.Balances = balancesMpt
 
-	fmt.Println(blck)
-
 	return blck, nil
 }
 
@@ -168,11 +164,11 @@ func (b *Block) Show() string {
 	height := "height=" + fmt.Sprint(b.Header.Height) + ", "
 	timestamp := "timestamp=" + fmt.Sprint(b.Header.Timestamp) + ", "
 	hash := "hash=" + b.Header.Hash + ", "
-	parentHash := "parentHash=" + b.Header.ParentHash + ", "
-	sizeTrn := "Transactions=" + b.Transactions.Order_nodes() + ","
-	sizeAcc := "Balances=" + b.Balances.Order_nodes() + "\n"
+	parentHash := "parentHash=" + b.Header.ParentHash + "\n"
+	//sizeTrn := "Transactions Size=" + fmt.Sprint(b.Header.SizeTransactions) + ","
+	//sizeBal := "Balances Size=" + fmt.Sprint(b.Header.SizeBalances) + "\n"
 
-	res = height + timestamp + hash + parentHash + sizeTrn + sizeAcc
+	res = height + timestamp + hash + parentHash// + sizeTrn + sizeBal
 
 	return res
 }

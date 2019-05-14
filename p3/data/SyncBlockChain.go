@@ -3,7 +3,6 @@ package data
 import (
 	"../../p1"
 	"../../p2"
-	"fmt"
 	"sync"
 )
 
@@ -89,7 +88,6 @@ func (sbc *SyncBlockChain) GenBlock(transactions p1.MerklePatriciaTrie, balances
 
 	block := p2.GenBlock(height+1, parentHash, nonce, transactions, balances)
 
-	fmt.Println(block.Show())
 
 	return block
 

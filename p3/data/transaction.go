@@ -1,6 +1,7 @@
 package data
 
 import (
+	"../../p1"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
@@ -9,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 
 	"os"
 )
@@ -25,7 +27,7 @@ type Transaction struct{
 }
 
 func NewTransaction(src string, dst string, amt float64, fee float64, initTimestamp int64) Transaction{
-	res := Transaction{
+	tx := Transaction{
 		Source: src,
 		Destination: dst,
 		Amount: amt,
@@ -35,14 +37,13 @@ func NewTransaction(src string, dst string, amt float64, fee float64, initTimest
 
 	}
 	
-	return res
+	return tx
 }
 
-func (tAction *Transaction) SignTransaction(privateKey *rsa.PrivateKey) error {
+func (tx *Transaction) SignTransaction(privateKey *rsa.PrivateKey) error {
 	//note: only signs the hash of the transaction
 
-	hash := tAction.HashTransaction()
-	fmt.Printf("  result hash: %s\n", hash)
+	hash := tx.HashTransaction()
 	hashBytes, err :=base64.URLEncoding.DecodeString( hash)
 
 	sig, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, hashBytes[:])
@@ -51,45 +52,44 @@ func (tAction *Transaction) SignTransaction(privateKey *rsa.PrivateKey) error {
 		fmt.Fprintf(os.Stderr, "Error from signing: %v\n", err)
 		return err
 	} else {
-		tAction.Signature = base64.URLEncoding.EncodeToString(sig)
+		tx.Signature = base64.URLEncoding.EncodeToString(sig)
 		return nil
 	}
 }
 
-func (tAction *Transaction) HashTransaction() string {
+func (tx *Transaction) HashTransaction() string {
 	str := ""
-	str += tAction.Source +":"
-	str += tAction.Destination +":"
-	str += fmt.Sprint(tAction.Amount) +":"
-	str += fmt.Sprint(tAction.Fee) +":"
-	//str += fmt.Sprint(tAction.TimeToLive) +":" //note: should ttl really be part of the hash?
-	str += tAction.Timestamp
+	str += tx.Source +":"
+	str += tx.Destination +":"
+	str += fmt.Sprint(tx.Amount) +":"
+	str += fmt.Sprint(tx.Fee) +":"
+	//str += fmt.Sprint(tx.TimeToLive) +":" //note: should ttl really be part of the hash?
+	str += tx.Timestamp
 
 	sum := sha256.Sum256([]byte(str))
-	fmt.Printf("original hash: %s\n", base64.URLEncoding.EncodeToString(sum[:]))
 	hash :=  base64.URLEncoding.EncodeToString(sum[:]) //not the best way to convert, may try something else later
 
 	return hash
 
 }
 
-func (tAction *Transaction) ShowTransaction() string {
+func (tx *Transaction) ShowTransaction() string {
 	var res string
 
 	res += "\n"
-	res += "Source: " + tAction.Source + "\n"
-	res += "Destination: " + tAction.Destination + "\n"
-	res += "Amount: " + fmt.Sprint(tAction.Amount) + "\n"
-	res += "Fee: " + fmt.Sprint(tAction.Fee) + "\n"
-	res += "TTL: " + fmt.Sprint(tAction.TimeToLive) + "\n"
-	res += "Timestamp: " + tAction.Timestamp + "\n"
-	res += "Signature: " + tAction.Signature + "\n"
+	res += "Source: " + tx.Source + "\n"
+	res += "Destination: " + tx.Destination + "\n"
+	res += "Amount: " + fmt.Sprint(tx.Amount) + "\n"
+	res += "Fee: " + fmt.Sprint(tx.Fee) + "\n"
+	res += "TTL: " + fmt.Sprint(tx.TimeToLive) + "\n"
+	res += "Timestamp: " + tx.Timestamp + "\n"
+	res += "Signature: " + tx.Signature + "\n"
 
 	return res
 
 }
 
-func (tAction *Transaction) VerifyTransaction() bool {
+func (tx *Transaction) VerifyTransaction() bool {
 	//verifies that the transaction is actually valid
 	//steps:
 		//Check that fee is actually 5%
@@ -100,27 +100,27 @@ func (tAction *Transaction) VerifyTransaction() bool {
 	var validSignature bool
 
 	//validate fee
-	validFee = tAction.Fee == .05 * tAction.Amount
+	validFee = tx.Fee == .05 * tx.Amount
 
 	//validate signature
-	if tAction.Signature == ""{
+	if tx.Signature == ""{
 		validSignature = false
 	} else {
-		pubKey, err1 := stringToKey(tAction.Source)
+		pubKey, err1 := stringToKey(tx.Source)
 
 		if err1 != nil {
 			fmt.Fprintf(os.Stderr, "Error getting key in validation: %v\n", err1)
 			return false
 		}
 
-		hash := tAction.HashTransaction()
+		hash := tx.HashTransaction()
 		hashBytes, err2 :=base64.URLEncoding.DecodeString(hash)
 		if err2 != nil {
 			fmt.Fprintf(os.Stderr, "Error decoding hash in validation: %v\n", err2)
 			return false
 		}
 
-		sig, err3 := base64.URLEncoding.DecodeString(tAction.Signature)
+		sig, err3 := base64.URLEncoding.DecodeString(tx.Signature)
 
 		if err3 != nil {
 			fmt.Fprintf(os.Stderr, "Error decoding signature in validation: %v\n", err3)
@@ -141,8 +141,92 @@ func (tAction *Transaction) VerifyTransaction() bool {
 
 }
 
-func (tAction *Transaction) TransactionToJson() (string, error){
-	res, err := json.Marshal(tAction)
+func (tx *Transaction) AddTransactionToMPTs(balances p1.MerklePatriciaTrie, transactions p1.MerklePatriciaTrie) (p1.MerklePatriciaTrie, p1.MerklePatriciaTrie, error){
+	fmt.Println("---------------- Adding TXs to MPTs ----------------")
+	// Function to add tx to both MPTs, if it can co through
+		// Only errors we are supposed to throw are: "transaction_is_double_spending" and "src_cannot_afford_tx"
+		// anything else means we have a serious problem
+
+		// note: does this need to be atomic? I think not, because this isn't done in parallel
+
+
+	//first check if transaction is already in transactions, to prevent double spending
+	var existingTX string
+	var err error
+	if transactions.Root == ""{
+		//if root of transactions is empty, then there are no previous TXs, and obviously no double spending
+		existingTX, err = "", errors.New("reached_invalid_leaf")
+
+	} else {
+		existingTX, err := transactions.Get(tx.HashTransaction()) //what does this return if the transaction is not in the MPT?
+		if existingTX != "" && err != errors.New("reached_invalid_leaf") {
+			//either double spending or error in get
+			return p1.MerklePatriciaTrie{}, p1.MerklePatriciaTrie{}, errors.New("transaction_is_double_spending")
+		} else if err != nil {
+			fmt.Fprintf(os.Stderr, "Error checking for double spending in AddTransactionToMPTs: %v\n", err) //is this needed?
+			return p1.MerklePatriciaTrie{}, p1.MerklePatriciaTrie{}, errors.New("transaction_breaks_tx_mpt")
+		}
+	}
+
+
+	//second, check balance, to see if there are enough funds
+	srcCurrBal, err2 := balances.Get(tx.Source)
+	var srcBalFloat float64 = 0
+	if err2 != nil{
+		return p1.MerklePatriciaTrie{}, p1.MerklePatriciaTrie{}, errors.New("could_not_get_src_balance")
+	} else {
+		srcBalFloat, err3 := strconv.ParseFloat(srcCurrBal, 64)
+		if err3 != nil{
+			return p1.MerklePatriciaTrie{}, p1.MerklePatriciaTrie{}, errors.New("could_not_convert_src_balance")
+		} else if srcBalFloat < (tx.Fee+tx.Amount) {
+			//finally an error we are likely / expected to hit
+			return p1.MerklePatriciaTrie{}, p1.MerklePatriciaTrie{}, errors.New("src_cannot_afford_tx")
+		}
+	}
+
+	//third, update balance of both accounts
+		//get balance of dst
+	dstCurrBal, err2 := balances.Get(tx.Source)
+	if existingTX != "" && err != errors.New("reached_invalid_leaf"){
+		//must add dst to balances mpt
+		balances.Insert(tx.Source, fmt.Sprint(srcBalFloat - (tx.Fee+tx.Amount)) ) //reduce source balance
+		balances.Insert(tx.Destination, fmt.Sprint(tx.Fee+tx.Amount) ) //create dst and set its balance
+		
+	} else if err2 != nil{
+		//if mpt.get has unexpected error
+		return p1.MerklePatriciaTrie{}, p1.MerklePatriciaTrie{}, errors.New("dst_breaks_balance_mpt")
+		
+	} else {
+		dstBalFloat, err3 := strconv.ParseFloat(dstCurrBal, 64)
+		if err3 != nil{
+			return p1.MerklePatriciaTrie{}, p1.MerklePatriciaTrie{}, errors.New("could_not_convert_dts_balance")
+		} else {
+			//dst exists, must update both balances
+			balances.Insert(tx.Source, fmt.Sprint( srcBalFloat - (tx.Fee+tx.Amount)) ) //reduce source balance
+			balances.Insert(tx.Destination, fmt.Sprint( dstBalFloat+ (tx.Fee+tx.Amount)) ) //create dst and set its balance
+		}
+	}
+
+	//add transaction to transactions mpt
+	txJson, err4 := tx.TransactionToJson()
+	if err4 != nil{
+		return p1.MerklePatriciaTrie{}, p1.MerklePatriciaTrie{}, errors.New("could_not_convert_tx_to_json")
+	}
+
+	transactions.Insert(tx.HashTransaction(), txJson)
+
+	fmt.Println("MPTs after TXs added:","\n\tBalances:", balances, "\n\tTransactions:", transactions)
+
+
+	//if everything above works, return updated MPTs with no error
+	return balances, transactions, nil
+
+
+
+}
+
+func (tx *Transaction) TransactionToJson() (string, error){
+	res, err := json.Marshal(tx)
 
 	if err != nil{
 		return "", errors.New("unable_to_convert_transaction")
@@ -163,6 +247,8 @@ func DecodeTransactionFromJson(jsonStr string) (Transaction, error){
 	return res, nil
 
 }
+
+
 
 
 

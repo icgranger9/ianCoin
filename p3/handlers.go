@@ -9,6 +9,7 @@ import (
 	"crypto/rsa"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"golang.org/x/crypto/sha3"
 	"io/ioutil"
@@ -21,13 +22,17 @@ import (
 	"time"
 )
 
-
+//server variables
 var TRUSTED_SERVER = "http://localhost:9901"
 var SELF_PUBLIC *rsa.PublicKey
 var SELF_PRIVATE *rsa.PrivateKey
 var SELF_ADDR = "http://localhost:" + os.Args[1]
-var NUM_0s = "000000"
 
+//variables used in block creation
+var NUM_0s = "000000" //best is 6
+var BLOCK_REWARD float64 = 250
+
+//blockChain variables
 var SBC data.SyncBlockChain
 var TRANSACTION_POOL []data.Transaction
 var Peers data.PeerList
@@ -50,7 +55,7 @@ func Start(w http.ResponseWriter, r *http.Request) {
 	var err error
 	SELF_PRIVATE, err = rsa.GenerateKey(crand.Reader, 2048)
 	if err != nil{
-		fmt.Println(err)
+		fmt.Fprintf(os.Stderr, "Error in generating key in Start: %v\n", err)
 		return
 	} else {
 		SELF_PUBLIC = &SELF_PRIVATE.PublicKey
@@ -96,9 +101,7 @@ func Download() {
 		transactions.Initial()
 		balances.Initial()
 
-		balances.Insert(data.KeyToString(SELF_PUBLIC), "100") //gives initial node 100 ianCoins to start
-
-		//fmt.Println("Balances", balances.Order_nodes())
+		balances.Insert(data.KeyToString(SELF_PUBLIC), fmt.Sprint(BLOCK_REWARD)) //gives initial node a block reward, so we start with some money in the system
 
 		var newBlock p2.Block
 		newBlock.Initial(0, "", "", transactions, balances)
@@ -113,7 +116,7 @@ func Download() {
 		//create URL, with params
 		baseUrl, err := url.Parse(TRUSTED_SERVER)
 		if err != nil {
-			fmt.Println(err)
+			fmt.Fprintf(os.Stderr, "Error parsing url in  Download: %v\n", err)
 			return
 		}
 
@@ -128,47 +131,46 @@ func Download() {
 
 		baseUrl.RawQuery = params.Encode()
 
-		resp, err := http.Get(baseUrl.String())
+		resp, err2 := http.Get(baseUrl.String())
 
-		if err != nil {
-			fmt.Println(err)
+		if err2 != nil {
+			fmt.Fprintf(os.Stderr, "Error converting URL to string in Download: %v\n", err2)
+
 			return
 		}
 
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			fmt.Println(err)
+		body, err3 := ioutil.ReadAll(resp.Body)
+		if err3 != nil {
+			fmt.Fprintf(os.Stderr, "Error in reading resp body in Download: %v\n", err3)
 			return
 		}
-
-		//fmt.Println("body: ", string(body))
 
 		var jsonInterface map[string]interface{}
 
 		//converts the json string into an interface
-		err = json.Unmarshal(body, &jsonInterface)
+		err4 := json.Unmarshal(body, &jsonInterface)
 
 		//checks that it worked
-		if err != nil {
-			fmt.Println(body)
-			panic(err)
+		if err4 != nil {
+			fmt.Fprintf(os.Stderr, "Error unmarshaling in Download: %v\n", err4)
+			return
 		}
 
 		//gets blockchain from interface
 		bcInterface := jsonInterface["blockchain"]
-		bcJson, err := json.Marshal(bcInterface)
+		bcJson, err5 := json.Marshal(bcInterface)
 
-		if err != nil {
-			fmt.Println("invalid blockchain:",bcInterface)
+		if err5 != nil {
+			fmt.Fprintf(os.Stderr, "Error unmarshaling in Download: %v\n", err5)
 			return
 		}
 
 		//gets blockchain from interface
 		peersInterface := jsonInterface["peers"]
-		peersJson, err := json.Marshal(peersInterface)
+		peersJson, err6 := json.Marshal(peersInterface)
 
-		if err != nil {
-			fmt.Println(peersInterface)
+		if err6 != nil {
+			fmt.Fprintf(os.Stderr, "Error unmarshaling in Download: %v\n", err6)
 			return
 		}
 
@@ -179,8 +181,6 @@ func Download() {
 
 	}
 
-	//fmt.Println(SBC.BlockChainToJson())
-
 }
 
 // Upload blockchain to whoever called this method, return jsonStr
@@ -189,36 +189,35 @@ func Upload(w http.ResponseWriter, r *http.Request) {
 
 	//handles adding new node to peerList
 
-	//fmt.Println("url:", r.URL.String())
 	query := r.URL.Query()
 	address := query.Get("address")
 	id := query.Get("id")
 	pubKey := query.Get("key")
 
 	if id == "" || address == "" || pubKey==""{
-		fmt.Println("invalid address or id from upload parameters")
+		fmt.Fprintf(os.Stderr, "Error invalid address or id recieved in Upload \n")
 		return
 	} else {
 		idInt32, err := strconv.ParseInt(id, 10, 32)
 		if err != nil {
-			fmt.Println("id could not be converted from string to int32")
+			fmt.Fprintf(os.Stderr, "Error id could not be converted in Upload: %v\n", err)
 			return
 		} else {
-			fmt.Println("adding address: ", address, " and id: ", idInt32, "with peer key")
+			fmt.Println("Adding address: ", address, " and id: ", idInt32, "to peers")
 			Peers.Add(address, int32(idInt32), pubKey)
 		}
 	}
 
 	//returns blockchain, and peerlist, so nodes can add trusted_node to their peermaps
-	blockChainJson, err := SBC.BlockChainToJson()
-	if err != nil {
-		fmt.Println(err)
+	blockChainJson, err2 := SBC.BlockChainToJson()
+	if err2 != nil {
+		fmt.Fprintf(os.Stderr, "Error bc converted in Upload: %v\n", err2)
 		return
 	}
 
-	peerListJson, err := Peers.PeerMapToJson()
-	if err != nil {
-		fmt.Println(err)
+	peerListJson, err3 := Peers.PeerMapToJson()
+	if err3 != nil {
+		fmt.Fprintf(os.Stderr, "Error PeerList could not be converted in Upload: %v\n", err3)
 		return
 	}
 
@@ -249,6 +248,7 @@ func UploadBlock(w http.ResponseWriter, r *http.Request) {
 
 // Received a heartbeat
 func HeartBeatReceive(w http.ResponseWriter, r *http.Request) {
+
 	jsonBody, err := ioutil.ReadAll(r.Body)
 
 	if err != nil {
@@ -256,14 +256,13 @@ func HeartBeatReceive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var hBeat data.HeartBeatData
-	err =json.Unmarshal(jsonBody, &hBeat)
-	if err != nil {
-		fmt.Println(err)
+	err2 :=json.Unmarshal(jsonBody, &hBeat)
+	if err2 != nil {
+		fmt.Fprintf(os.Stderr, "Error hBeat could not be unmarshaled in hBeatReceive: %v\n", err2)
 		return
 	}
 
-	//fmt.Println("got heartbeat from:", hBeat.Addr)
-	//fmt.Println("with key:", hBeat.PublicKey)
+	fmt.Println("Got heartbeat from:", hBeat.Addr)
 
 	//add the node that we get the heartbeat from, and it's peers
 	Peers.Add(hBeat.Addr, hBeat.Id, hBeat.PublicKey)
@@ -277,10 +276,9 @@ func HeartBeatReceive(w http.ResponseWriter, r *http.Request) {
 	//verify heartbeat
 	verified := false
 
-	newBlock, err := p2.DecodeFromJson(hBeat.BlockJson)
-	if err != nil {
-		fmt.Println(hBeat.BlockJson)
-		fmt.Println("err2:", err)
+	newBlock, err3 := p2.DecodeFromJson(hBeat.BlockJson)
+	if err3 != nil {
+		fmt.Fprintf(os.Stderr, "Error newBlock could not be decoded in hBeatReceive: %v\n", err3)
 		return
 	}
 
@@ -288,7 +286,8 @@ func HeartBeatReceive(w http.ResponseWriter, r *http.Request) {
 	parentHash := newBlock.Header.ParentHash
 	nonce := newBlock.Header.Nonce
 	transactionsHash := newBlock.Transactions.Root
-	concatInfo := parentHash + nonce + transactionsHash
+	balancesHash := newBlock.Balances.Root
+	concatInfo := parentHash + nonce + transactionsHash + balancesHash
 
 	//use that hash to check the proof of work
 	proofOfWork := sha3.Sum256([]byte(concatInfo))
@@ -306,9 +305,9 @@ func HeartBeatReceive(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		block, err := p2.DecodeFromJson(hBeat.BlockJson)
-		if err != nil {
-			fmt.Println(err)
+		block, err4 := p2.DecodeFromJson(hBeat.BlockJson)
+		if err4 != nil {
+			fmt.Fprintf(os.Stderr, "Error newBlock could not be decoded in hBeatReceive: %v\n", err4) //note: don't we already do this up by err3?
 			return
 		}
 
@@ -332,6 +331,8 @@ func HeartBeatReceive(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("\tBlock received by: " + SELF_ADDR))
 
 		fmt.Println("Finished Receive heart beat")
+	} else {
+		fmt.Fprintln(os.Stderr, "Received invalid nonce in HeartBeatReceive")
 	}
 
 }
@@ -339,21 +340,21 @@ func HeartBeatReceive(w http.ResponseWriter, r *http.Request) {
 // Ask another server to return a block of certain height and hash
 func AskForBlock(height int32, hash string) {
 	fmt.Println("Asking for block")
-	url := "/block/" + fmt.Sprint(height) + "/" + hash
+	urlVar := "/block/" + fmt.Sprint(height) + "/" + hash
 
 	peerMap := Peers.Copy()
 
 	for keyAddr := range peerMap {
 
-		resp, err := http.Get("http://" + keyAddr + url)
+		resp, err := http.Get("http://" + keyAddr + urlVar)
 
 		if err != nil {
-			fmt.Println(err)
+			fmt.Fprintf(os.Stderr, "Error in get request in AskForBlock: %v\n", err)
 		}
 
-		body, err := ioutil.ReadAll(resp.Body) // occasionally gives error, look into it
-		if err != nil {
-			fmt.Println(err)
+		body, err2 := ioutil.ReadAll(resp.Body) // occasionally gives error, look into it
+		if err2 != nil {
+			fmt.Fprintf(os.Stderr, "Error in body in AskForBlock: %v\n", err2)
 		} else {
 			block, err := p2.DecodeFromJson(string(body))
 			if err == nil {
@@ -395,7 +396,7 @@ func ForwardHeartBeat(heartBeatData data.HeartBeatData) {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error could not read response in forwardHearBeat: %v\n", err2)
 		} else {
-			fmt.Println(string(body))
+			fmt.Println("\tForwarded hBeat to ", keyAddr ," response is: ", string(body))
 		}
 
 	}
@@ -407,14 +408,12 @@ func StartHeartBeat() {
 
 	for ifStarted {
 
-		fmt.Println("In start heartbeat")
-
 		timeToSleep := rand.Intn(5) + 5
 		time.Sleep(time.Duration(timeToSleep) * time.Second)
 
 		PeersJson, err := Peers.PeerMapToJson()
 		if err != nil {
-			fmt.Println(err)
+			fmt.Fprintf(os.Stderr, "Error converting peers in StartHeartBeat: %v\n", err)
 		} else {
 			heartBeatData := data.PrepareHeartBeatData(&SBC, Peers.GetSelfId(), PeersJson, SELF_ADDR, data.KeyToString(SELF_PUBLIC))
 
@@ -426,7 +425,7 @@ func StartHeartBeat() {
 
 			for keyAddr := range peerMap {
 
-				fmt.Println("sent heartbeat to:", keyAddr+urlAddress)
+				fmt.Println("Sent heartbeat to:", keyAddr+urlAddress)
 				_, err := http.Post(keyAddr+urlAddress, httpType, bytes.NewBuffer(hBeatJson))
 				//not really needed, since the response doesn't matter
 				if err != nil {
@@ -450,8 +449,9 @@ func StartHeartBeat() {
 // ---------------- Added for p4 ----------------
 
 func Canonical(w http.ResponseWriter, r *http.Request) {
-	currChains := SBC.GetLatestBlocks()
+	fmt.Println("In canonical")
 
+	currChains := SBC.GetLatestBlocks()
 	res := ""
 
 	for ind, block := range currChains {
@@ -474,21 +474,26 @@ func StartTryingNonces() {
 
 	calculateNonce := true
 
-	//generates mpt. Should be replaced getting transactoins from pool, and adding those to the previous mpt
-	transactions := data.GenerateMPT()
-	balances := data.GenerateMPT()
+	//get latest block
+	currLatest := SBC.GetLatestBlocks()
+	var currHead p2.Block
+	if currLatest == nil {
+		fmt.Fprintf(os.Stderr, "Error getting latest block in StartTryingNonces\n")
+		return
+	} else {
+		currHead = currLatest[0]
+	}
+
+	//generates mpt, based on that latest block
+	transactions, balances, err:= GenerateNextMpt(currHead)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error could not get mpts in StartTryingNonces: %v\n", err)
+		return //is this really what we should do?
+	}
+
 
 	for calculateNonce {
 
-		//get block
-		currLatest := SBC.GetLatestBlocks()
-		var currHead p2.Block
-		if currLatest == nil {
-			fmt.Fprintf(os.Stderr, "Error getting latest block in TryingNonces\n")
-			return
-		} else {
-			currHead = currLatest[0]
-		}
 
 		//generate nonce
 		nonce := data.GenerateNonce()
@@ -503,7 +508,6 @@ func StartTryingNonces() {
 		validNonce = strings.HasPrefix(powString, NUM_0s)
 
 		if validNonce {
-			//fmt.Println("hashing:", currHead.Header.Hash, "\n", nonce, "\n",  mpt.Root)
 
 			newBlock := SBC.GenBlock(transactions, balances, nonce)
 			blockJson, _ := p2.EncodeToJSON(newBlock)
@@ -514,6 +518,15 @@ func StartTryingNonces() {
 			ForwardHeartBeat(hBeat)
 			fmt.Println("found valid nonce")
 
+			//should we add the new block to our own BC?
+			//generate new MPT, off block we just made
+
+			//generates mpt, based on that latest block
+			transactions, balances, err = GenerateNextMpt(newBlock)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error could not get mpts a second time in StartTryingNonces: %v\n", err)
+				return //is this really what we should do?
+			}
 		}
 
 	}
@@ -525,52 +538,53 @@ func ReceiveTransaction(w http.ResponseWriter, r *http.Request){
 	jsonBody, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error with json in recieveTransaction: %v\n", err)
+		w.Write([]byte("Received invalid transaction"))
 		return
 	}
 
-	tAction, err2 := data.DecodeTransactionFromJson(string(jsonBody))
+	tx, err2 := data.DecodeTransactionFromJson(string(jsonBody))
 	if err2 != nil {
 		fmt.Fprintf(os.Stderr, "Error decodingJson in recieveTransaction: %v\n", err2)
+		w.Write([]byte("Received invalid transaction"))
 		return
 	}
 
 	//verify transaction
-	verified := tAction.VerifyTransaction()
+	verified := tx.VerifyTransaction()
 
 	if verified==false{
 		fmt.Fprintf(os.Stderr, "Error With invalid transaction in recieveTransaction\n" )
+		w.Write([]byte("Received invalid transaction"))
 		return
 	}
 
 	//add to pool
-	TRANSACTION_POOL = append(TRANSACTION_POOL, tAction)
+	TRANSACTION_POOL = append(TRANSACTION_POOL, tx)
 
 	//reduce ttl
-	tAction.TimeToLive = tAction.TimeToLive-1
-	if tAction.TimeToLive <= 0{
-		return
+	tx.TimeToLive = tx.TimeToLive-1
+	if tx.TimeToLive <= 0{
+		//do nothing
 	} else {
 		//forward to peers
-		ForwardTransaction(tAction)
+		ForwardTransaction(tx)
 	}
 
+	//write response
+	w.Write([]byte("Received valid transaction"))
+
 }
 
-
-func CreateTransaction(w http.ResponseWriter, r *http.Request){
-	//what should this look like? Who creates the transaction, do they need to know all keys, or dest, or anything else?
-}
-
-func ForwardTransaction(tAction data.Transaction){
+func ForwardTransaction(tx data.Transaction){
 	url := "/transaction/receive"
 	httpType := "application/json"
-	tActionJson, _ := tAction.TransactionToJson()
+	txJson, _ := tx.TransactionToJson()
 
 	peerMap := Peers.Copy()
 
 	for keyAddr := range peerMap {
 
-		resp, err := http.Post(keyAddr+url, httpType, bytes.NewBuffer([]byte(tActionJson)))
+		resp, err := http.Post(keyAddr+url, httpType, bytes.NewBuffer([]byte(txJson)))
 
 		//not really needed, since the response doesn't matter
 		if err != nil {
@@ -581,8 +595,129 @@ func ForwardTransaction(tAction data.Transaction){
 		if err2 != nil {
 			fmt.Fprintf(os.Stderr, "Error could not read response in forwardHearBeat: %v\n", err)
 		} else {
-			fmt.Println(string(body))
+			fmt.Println("Forwarded transaction to ", keyAddr ," response is: ", string(body))
 		}
 
 	}
+}
+
+func GenerateNextMpt(currHead p2.Block) (p1.MerklePatriciaTrie, p1.MerklePatriciaTrie, error){
+	fmt.Println("Generating MPTs off block:", currHead.Show())
+	//helper function to generate next MPTs based off of a given block
+
+
+	for len(TRANSACTION_POOL) == 0 {
+		//busy wait while there are no new transactions. What else can we do? maybe make a new transaction?
+			//if there are no transactions in the pool, send 1 ianCoin to all peers.
+			// This obviously would not happen in a real world scenario, and is just done to increase simulated traffic
+
+			peerKeys := Peers.CopyKeys()
+
+			for peerKey := range peerKeys {
+				CreateTransaction(peerKey, 1)
+			}
+
+			//sleep for 5 sec, to allow those transactions to be sent
+			time.Sleep(time.Duration(5) * time.Second)
+
+	}
+
+	//get previous mpt's
+	transactions := currHead.Transactions
+	balances := currHead.Balances
+
+	fmt.Println("Starting MPTs:","\n\tBalances:", balances, "\n\tTransactions:", transactions)
+
+	//add some transactions
+		//Note: How many should we add? Just going to default to 1/2 of pool
+	var feeTotal float64
+	numTXsToAdd := len(TRANSACTION_POOL)/2
+	for x:=0; x < numTXsToAdd; x++ {
+		//get front of pool (pop)
+		tx, tmpPool := TRANSACTION_POOL[0], TRANSACTION_POOL[:1] //pops first transaction
+		TRANSACTION_POOL = tmpPool //updates pool
+
+		//handle adding to mpt's
+		resBalances, resTXs, err := tx.AddTransactionToMPTs(balances, transactions)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error could not add transaction in GenerateNextMpt: %v\n", err)
+			break //is this the best response?
+		} else {
+			feeTotal += tx.Fee
+			transactions = resTXs
+			balances = resBalances
+		}
+
+		//what should we do if the tx can't go through? drop, or push to back of the pool?
+			//currently just drop it
+	}
+
+	//add x coins to self balance
+		//Note: How can we do this well? Does it need a signature, or any verification?
+
+	currBal, err2 := balances.Get(data.KeyToString(SELF_PUBLIC))
+	if err2 == errors.New("reached_invalid_leaf"){
+		//if we don't have a balance, need to create one! Duh
+		balances.Insert(data.KeyToString(SELF_PUBLIC), fmt.Sprint(feeTotal+BLOCK_REWARD))
+
+	} else if err2 != nil{
+		fmt.Fprintf(os.Stderr, "Error could not get ballance of self in GenerateNextMpt: %v\n", err2)
+
+		return balances, transactions, err2
+	} else{
+		balFloat, err3 := strconv.ParseFloat(currBal, 64)
+		if err3 != nil{
+			fmt.Fprintf(os.Stderr, "Error could not convert ballance of self in GenerateNextMpt: %v\n", err3)
+			return balances, transactions, err3
+		} else {
+			//only update value if no previous errors
+			balances.Insert(data.KeyToString(SELF_PUBLIC), fmt.Sprint(balFloat+feeTotal+BLOCK_REWARD)) //insert will update value, right? Must double check
+		}
+	}
+
+	fmt.Println("\nAt end of generate:","\n\tBalances:", balances, "\n\tTransactions:", transactions)
+
+	return balances, transactions, nil
+}
+
+func CreateTransaction(dest string, amount float64){
+	//note: should this also add the transaction to our own pool?
+
+	tx := data.NewTransaction(data.KeyToString(SELF_PUBLIC), dest, amount, amount*.05, time.Now().UnixNano())
+	err := tx.SignTransaction(SELF_PRIVATE)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error could not sign tx in CreateTransaction: %v\n", err)
+		return
+	}
+
+
+	urlAddress := "/transaction/receive"
+	httpType := "application/json"
+	txJson, err2 := tx.TransactionToJson()
+
+	if err2 != nil {
+		fmt.Fprintf(os.Stderr, "Error could not Marshal TX in CreateTransaction: %v\n", err2)
+		return
+	}
+
+	peerMap := Peers.Copy()
+
+	for keyAddr := range peerMap {
+
+		fmt.Println("Sent tx to:", keyAddr+urlAddress)
+		resp, err3 := http.Post(keyAddr+urlAddress, httpType, bytes.NewBuffer([]byte(txJson)))
+		//not really needed, since the response doesn't matter
+		if err3 != nil {
+			fmt.Fprintf(os.Stderr, "Error in response in startTransaction: %v\n", err3)
+		}
+
+		body, err4 := ioutil.ReadAll(resp.Body)
+		if err4 != nil {
+			fmt.Fprintf(os.Stderr, "Error in reading body startTransaction: %v\n", err4)
+		} else {
+			fmt.Println("\tPrinting the response in CreateTransaction:", string(body))
+		}
+
+	}
+
 }

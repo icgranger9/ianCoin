@@ -1,28 +1,8 @@
 package data
 
 import (
-	"../../p1"
-	"fmt"
 	"math/rand"
 )
-
-func GenerateMPT() p1.MerklePatriciaTrie {
-	mpt := p1.MerklePatriciaTrie{}
-	mpt.Initial()
-
-	dict := []string{"this", "is", "one", "simple", "dictionary", "of", "words", "that", "can", "be", "added", "into", "our", "mtp", "I", "will", "now", "add", "many", "other", "options", "just", "to", "make", "it", "more", "random", "sound", "good?", "hello", "world", "golang", "USF", "computer", "science", "san", "francisco", "california", "america", "golden", "state", "warriors", "hopefully", "thats", "enough"}
-	mptSize := rand.Intn(len(dict)-1) + 1
-
-	for wordsAdded := 0; wordsAdded < mptSize; wordsAdded++ {
-
-		randNum := rand.Intn(len(dict) - 1)
-		word := dict[randNum]
-
-		//fmt.Println("\t\t\tInserting into mpt: ", word, " --> ", fmt.Sprint("word num: ", wordsAdded))
-		mpt.Insert(word, fmt.Sprint("word num: ", wordsAdded))
-	}
-	return mpt
-}
 
 func GenerateNonce() string {
 

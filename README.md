@@ -15,10 +15,10 @@ Completed
 In Progress
 * Add base functionality: wallet creations, and transfer between wallets
 * Add reward to creation of new canonical block
+* Add sum of fees to miner’s reward
 
 To Do
 * Update transactions to only become final after 3 blocks
-* Add sum of fees to miner’s reward
 * Update PoW, so difficulty scales with number of transactions
 
 

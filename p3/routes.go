@@ -53,13 +53,6 @@ var routes = Routes{
 
 	// ---------------- Added for p5 ----------------
 	Route{
-		"CreateTransaction",
-		"POST",
-		"/transaction/create",
-		CreateTransaction,
-	},
-
-	Route{
 		"ReceiveTransaction",
 		"POST",
 		"/transaction/receive",

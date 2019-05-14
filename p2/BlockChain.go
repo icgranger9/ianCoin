@@ -47,7 +47,6 @@ func (bChain *BlockChain) Insert(b Block) error {
 	//update height if needed
 	if bHeight > bChain.Height {
 		bChain.Height = bHeight
-		fmt.Println("updated height")
 	}
 	return nil
 }
@@ -133,7 +132,7 @@ func (bChain *BlockChain) Show() string {
 		rs += "\n"
 	}
 	sum := sha3.Sum256([]byte(rs))
-	rs = "This is the BlockChain: %s\n" + hex.EncodeToString(sum[:]) + rs
+	rs = "This is the BlockChain:\n" + hex.EncodeToString(sum[:]) + rs
 	return rs
 }
 
