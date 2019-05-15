@@ -27,7 +27,7 @@ type Block struct {
 	Balances p1.MerklePatriciaTrie
 }
 
-func (b *Block) Initial(initHeight int32, initParentHash string, initNonce string, initTransactions p1.MerklePatriciaTrie, initBalances p1.MerklePatriciaTrie) {
+func (b *Block) Initial(initHeight int32, initParentHash string, initNonce string, initBalances p1.MerklePatriciaTrie, initTransactions p1.MerklePatriciaTrie) {
 
 	//Assign header variables
 	b.Header.Height = initHeight
@@ -59,7 +59,7 @@ func EncodeToJSON(b Block) (string, error) {
 	parentStr := `"parentHash":"` + b.Header.ParentHash + `",`
 	nonceStr := `"nonce":"` + b.Header.Nonce + `",`
 	sizeTrStr := `"sizeTransactions":` + fmt.Sprint(b.Header.SizeTransactions) + `,`
-	sizeAccStr :=`"sizeBalances":` + fmt.Sprint(b.Header.SizeBalances) + `,`
+	sizeBalStr :=`"sizeBalances":` + fmt.Sprint(b.Header.SizeBalances) + `,`
 	//mpts harder to convert
 	transactionStr := `"transactionMpt":{`
 
@@ -88,7 +88,7 @@ func EncodeToJSON(b Block) (string, error) {
 
 
 	//add everything together, and return
-	res := "{" + hashStr + timeStr + heightStr + parentStr + nonceStr + sizeTrStr + transactionStr + sizeAccStr+ BalanceStr+ "}"
+	res := "{" + hashStr + timeStr + heightStr + parentStr + nonceStr + sizeTrStr + transactionStr + sizeBalStr+ BalanceStr+ "}"
 
 	return res, nil
 }
@@ -151,9 +151,9 @@ func DecodeFromJson(jsonStr string) (Block, error) {
 
 // ---------------- Added for p3 ----------------
 
-func GenBlock(initHeight int32, initParentHash string, initNonce string, initTransactions p1.MerklePatriciaTrie, initBalances p1.MerklePatriciaTrie) Block {
+func GenBlock(initHeight int32, initParentHash string, initNonce string, initBalances p1.MerklePatriciaTrie, initTransactions p1.MerklePatriciaTrie) Block {
 	newBlock := Block{}
-	newBlock.Initial(initHeight, initParentHash, initNonce, initTransactions, initBalances)
+	newBlock.Initial(initHeight, initParentHash, initNonce, initBalances, initTransactions)
 
 	return newBlock
 }

@@ -28,12 +28,12 @@ type MerklePatriciaTrie struct {
 
 func (mpt *MerklePatriciaTrie) Get(key string) (string, error) {
 
-	fmt.Println("In mpt.Get, with mpt of:", mpt.Order_nodes())
+	//fmt.Println("In mpt.Get, with mpt of:", mpt.Order_nodes())
 
 	var hexKey []uint8
 
 	if key == "" {
-		return "", errors.New("no_key_privided")
+		return "", errors.New("no_key_provided")
 	} else {
 		asciiKey := []uint8(key)
 

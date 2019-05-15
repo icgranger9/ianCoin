@@ -9,7 +9,6 @@ import (
 	"crypto/rsa"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"golang.org/x/crypto/sha3"
 	"io/ioutil"
@@ -485,7 +484,7 @@ func StartTryingNonces() {
 	}
 
 	//generates mpt, based on that latest block
-	transactions, balances, err:= GenerateNextMpt(currHead)
+	balances, transactions, err:= GenerateNextMpt(currHead)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error could not get mpts in StartTryingNonces: %v\n", err)
 		return //is this really what we should do?
@@ -522,7 +521,7 @@ func StartTryingNonces() {
 			//generate new MPT, off block we just made
 
 			//generates mpt, based on that latest block
-			transactions, balances, err = GenerateNextMpt(newBlock)
+			balances, transactions, err = GenerateNextMpt(newBlock)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error could not get mpts a second time in StartTryingNonces: %v\n", err)
 				return //is this really what we should do?
@@ -558,8 +557,20 @@ func ReceiveTransaction(w http.ResponseWriter, r *http.Request){
 		return
 	}
 
+	//Checks if TX is in pool, no point having repeats
+	var inPool = false
+	for _, txInPool:= range TRANSACTION_POOL{
+		if txInPool.HashTransaction() == tx.HashTransaction() {
+			fmt.Fprintf(os.Stderr, "Transaction already in pool in recieveTransaction\n" )
+			inPool = true
+			break
+		}
+	}
+
 	//add to pool
-	TRANSACTION_POOL = append(TRANSACTION_POOL, tx)
+	if !inPool {
+		TRANSACTION_POOL = append(TRANSACTION_POOL, tx)
+	}
 
 	//reduce ttl
 	tx.TimeToLive = tx.TimeToLive-1
@@ -602,7 +613,6 @@ func ForwardTransaction(tx data.Transaction){
 }
 
 func GenerateNextMpt(currHead p2.Block) (p1.MerklePatriciaTrie, p1.MerklePatriciaTrie, error){
-	fmt.Println("Generating MPTs off block:", currHead.Show())
 	//helper function to generate next MPTs based off of a given block
 
 
@@ -613,12 +623,12 @@ func GenerateNextMpt(currHead p2.Block) (p1.MerklePatriciaTrie, p1.MerklePatrici
 
 			peerKeys := Peers.CopyKeys()
 
-			for peerKey := range peerKeys {
+			for _, peerKey := range peerKeys {
 				CreateTransaction(peerKey, 1)
 			}
 
 			//sleep for 5 sec, to allow those transactions to be sent
-			time.Sleep(time.Duration(5) * time.Second)
+			time.Sleep(time.Duration(2) * time.Second)
 
 	}
 
@@ -626,13 +636,15 @@ func GenerateNextMpt(currHead p2.Block) (p1.MerklePatriciaTrie, p1.MerklePatrici
 	transactions := currHead.Transactions
 	balances := currHead.Balances
 
-	fmt.Println("Starting MPTs:","\n\tBalances:", balances, "\n\tTransactions:", transactions)
+	fmt.Println("Starting MPTs:","\n\tBalances:", balances.Order_nodes(), "\n\tTransactions:", transactions.Order_nodes())
 
 	//add some transactions
 		//Note: How many should we add? Just going to default to 1/2 of pool
 	var feeTotal float64
-	numTXsToAdd := len(TRANSACTION_POOL)/2
+	numTXsToAdd := len(TRANSACTION_POOL)/2.0 + 1
+	fmt.Println("nums to add:", numTXsToAdd, "with tPool of len", len(TRANSACTION_POOL))
 	for x:=0; x < numTXsToAdd; x++ {
+
 		//get front of pool (pop)
 		tx, tmpPool := TRANSACTION_POOL[0], TRANSACTION_POOL[:1] //pops first transaction
 		TRANSACTION_POOL = tmpPool //updates pool
@@ -641,6 +653,7 @@ func GenerateNextMpt(currHead p2.Block) (p1.MerklePatriciaTrie, p1.MerklePatrici
 		resBalances, resTXs, err := tx.AddTransactionToMPTs(balances, transactions)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error could not add transaction in GenerateNextMpt: %v\n", err)
+			fmt.Println("\nInvalid MPTs:","\n\tBalances:", resBalances.Order_nodes(), "\n\tTransactions:", resTXs.Order_nodes())
 			break //is this the best response?
 		} else {
 			feeTotal += tx.Fee
@@ -656,12 +669,12 @@ func GenerateNextMpt(currHead p2.Block) (p1.MerklePatriciaTrie, p1.MerklePatrici
 		//Note: How can we do this well? Does it need a signature, or any verification?
 
 	currBal, err2 := balances.Get(data.KeyToString(SELF_PUBLIC))
-	if err2 == errors.New("reached_invalid_leaf"){
+	if err2 != nil && err2.Error() == "reached_invalid_leaf" {
 		//if we don't have a balance, need to create one! Duh
 		balances.Insert(data.KeyToString(SELF_PUBLIC), fmt.Sprint(feeTotal+BLOCK_REWARD))
 
 	} else if err2 != nil{
-		fmt.Fprintf(os.Stderr, "Error could not get ballance of self in GenerateNextMpt: %v\n", err2)
+		fmt.Fprintf(os.Stderr, "Error could not get ballance of self in GenerateNextMpt: \"%v\"\n", err2)
 
 		return balances, transactions, err2
 	} else{
@@ -675,21 +688,23 @@ func GenerateNextMpt(currHead p2.Block) (p1.MerklePatriciaTrie, p1.MerklePatrici
 		}
 	}
 
-	fmt.Println("\nAt end of generate:","\n\tBalances:", balances, "\n\tTransactions:", transactions)
+	fmt.Println("\nAt end of generate:","\n\tBalances:", balances.Order_nodes(), "\n\tTransactions:", transactions.Order_nodes())
 
 	return balances, transactions, nil
 }
 
-func CreateTransaction(dest string, amount float64){
+func CreateTransaction(dest *rsa.PublicKey, amount float64){
 	//note: should this also add the transaction to our own pool?
 
-	tx := data.NewTransaction(data.KeyToString(SELF_PUBLIC), dest, amount, amount*.05, time.Now().UnixNano())
+	//convert dst to string
+	dstStr := data.KeyToString(dest)
+
+	tx := data.NewTransaction(data.KeyToString(SELF_PUBLIC), dstStr, amount, amount*.05, time.Now().UnixNano())
 	err := tx.SignTransaction(SELF_PRIVATE)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error could not sign tx in CreateTransaction: %v\n", err)
 		return
 	}
-
 
 	urlAddress := "/transaction/receive"
 	httpType := "application/json"

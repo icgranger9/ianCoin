@@ -142,7 +142,7 @@ func (tx *Transaction) VerifyTransaction() bool {
 }
 
 func (tx *Transaction) AddTransactionToMPTs(balances p1.MerklePatriciaTrie, transactions p1.MerklePatriciaTrie) (p1.MerklePatriciaTrie, p1.MerklePatriciaTrie, error){
-	fmt.Println("---------------- Adding TXs to MPTs ----------------")
+	fmt.Println("---------------- Adding TX to MPTs ----------------")
 	// Function to add tx to both MPTs, if it can co through
 		// Only errors we are supposed to throw are: "transaction_is_double_spending" and "src_cannot_afford_tx"
 		// anything else means we have a serious problem
@@ -151,20 +151,22 @@ func (tx *Transaction) AddTransactionToMPTs(balances p1.MerklePatriciaTrie, tran
 
 
 	//first check if transaction is already in transactions, to prevent double spending
-	var existingTX string
-	var err error
 	if transactions.Root == ""{
 		//if root of transactions is empty, then there are no previous TXs, and obviously no double spending
-		existingTX, err = "", errors.New("reached_invalid_leaf")
 
 	} else {
-		existingTX, err := transactions.Get(tx.HashTransaction()) //what does this return if the transaction is not in the MPT?
-		if existingTX != "" && err != errors.New("reached_invalid_leaf") {
-			//either double spending or error in get
+		_, err := transactions.Get(tx.HashTransaction()) //what does this return if the transaction is not in the MPT?
+		if err != nil {
+			//means either no double spending, orr there's an error in my mpt
+
+			if err.Error() != "reached_invalid_leaf" {
+				//reached unusual err. log it, but do not return
+				fmt.Fprintf(os.Stderr, "Error checking for double spending in AddTransactionToMPTs: %v\n", err)
+			}
+
+		} else {
+			//definitely double spending
 			return p1.MerklePatriciaTrie{}, p1.MerklePatriciaTrie{}, errors.New("transaction_is_double_spending")
-		} else if err != nil {
-			fmt.Fprintf(os.Stderr, "Error checking for double spending in AddTransactionToMPTs: %v\n", err) //is this needed?
-			return p1.MerklePatriciaTrie{}, p1.MerklePatriciaTrie{}, errors.New("transaction_breaks_tx_mpt")
 		}
 	}
 
@@ -175,7 +177,9 @@ func (tx *Transaction) AddTransactionToMPTs(balances p1.MerklePatriciaTrie, tran
 	if err2 != nil{
 		return p1.MerklePatriciaTrie{}, p1.MerklePatriciaTrie{}, errors.New("could_not_get_src_balance")
 	} else {
+		//converts string to float
 		srcBalFloat, err3 := strconv.ParseFloat(srcCurrBal, 64)
+
 		if err3 != nil{
 			return p1.MerklePatriciaTrie{}, p1.MerklePatriciaTrie{}, errors.New("could_not_convert_src_balance")
 		} else if srcBalFloat < (tx.Fee+tx.Amount) {
@@ -185,39 +189,43 @@ func (tx *Transaction) AddTransactionToMPTs(balances p1.MerklePatriciaTrie, tran
 	}
 
 	//third, update balance of both accounts
-		//get balance of dst
-	dstCurrBal, err2 := balances.Get(tx.Source)
-	if existingTX != "" && err != errors.New("reached_invalid_leaf"){
-		//must add dst to balances mpt
-		balances.Insert(tx.Source, fmt.Sprint(srcBalFloat - (tx.Fee+tx.Amount)) ) //reduce source balance
-		balances.Insert(tx.Destination, fmt.Sprint(tx.Fee+tx.Amount) ) //create dst and set its balance
-		
-	} else if err2 != nil{
-		//if mpt.get has unexpected error
-		return p1.MerklePatriciaTrie{}, p1.MerklePatriciaTrie{}, errors.New("dst_breaks_balance_mpt")
-		
+
+	dstCurrBal, err3 := balances.Get(tx.Destination)
+	if err3 != nil {
+		if err3.Error() == "reached_invalid_leaf" {
+			//must add dst to balances mpt
+			balances.Insert(tx.Source, fmt.Sprint(srcBalFloat - (tx.Fee+tx.Amount)) ) //reduce source balance
+			balances.Insert(tx.Destination, fmt.Sprint(tx.Amount) ) //create dst and set its balance
+
+		} else {
+				//if mpt.get has unexpected error
+				fmt.Fprintf(os.Stderr, "Error checkingdstBalance in AddTransactionToMPTs: %v\n", err2) //is this needed?
+				return p1.MerklePatriciaTrie{}, p1.MerklePatriciaTrie{}, errors.New("dst_breaks_balance_mpt")
+		}
 	} else {
-		dstBalFloat, err3 := strconv.ParseFloat(dstCurrBal, 64)
-		if err3 != nil{
+
+		//must update balance of dst in MPT
+		dstBalFloat, err4 := strconv.ParseFloat(dstCurrBal, 64)
+		if err4 != nil{
 			return p1.MerklePatriciaTrie{}, p1.MerklePatriciaTrie{}, errors.New("could_not_convert_dts_balance")
 		} else {
 			//dst exists, must update both balances
-			balances.Insert(tx.Source, fmt.Sprint( srcBalFloat - (tx.Fee+tx.Amount)) ) //reduce source balance
-			balances.Insert(tx.Destination, fmt.Sprint( dstBalFloat+ (tx.Fee+tx.Amount)) ) //create dst and set its balance
+			balances.Insert(tx.Source, fmt.Sprint( srcBalFloat - (tx.Fee+tx.Amount)) ) 		//reduce source balance
+			balances.Insert(tx.Destination, fmt.Sprint( dstBalFloat +tx.Amount) )	//create dst and set its balance
 		}
 	}
 
 	//add transaction to transactions mpt
-	txJson, err4 := tx.TransactionToJson()
-	if err4 != nil{
+	txJson, err5 := tx.TransactionToJson()
+	if err5 != nil{
 		return p1.MerklePatriciaTrie{}, p1.MerklePatriciaTrie{}, errors.New("could_not_convert_tx_to_json")
 	}
 
 	transactions.Insert(tx.HashTransaction(), txJson)
 
-	fmt.Println("MPTs after TXs added:","\n\tBalances:", balances, "\n\tTransactions:", transactions)
+	//fmt.Println("MPTs after TXs added:","\n\tBalances:", balances.Order_nodes(), "\n\tTransactions:", transactions.Order_nodes())
 
-
+	fmt.Println("---------------- Finished Adding TX to MPTs ----------------")
 	//if everything above works, return updated MPTs with no error
 	return balances, transactions, nil
 
