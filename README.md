@@ -20,9 +20,10 @@ Completed
 * Add sum of fees to miner’s reward
 
 In Progress
-* Update PoW, so difficulty scales with number of transactions
+
 
 To Do
+* Update PoW, so difficulty scales with number of transactions
 * Update transactions to only become final after 3 blocks
 
 
