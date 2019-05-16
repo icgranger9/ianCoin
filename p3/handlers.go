@@ -228,20 +228,27 @@ func Upload(w http.ResponseWriter, r *http.Request) {
 
 // Upload a block to whoever called this method, return jsonStr
 func UploadBlock(w http.ResponseWriter, r *http.Request) {
+
+	fmt.Println("Uploading Block")
 	uri := r.RequestURI
 	uriSplit := strings.Split(uri, "/")
 
-	height, err := strconv.ParseInt(uriSplit[1], 10, 32)
+	//note: uriSplit is shifted one because uri begins with /, so uriSplit[0] == ""
+
+	height, err := strconv.ParseInt(uriSplit[2], 10, 32)
 	if err != nil {
-		fmt.Print("id could not be converted from string to int32")
+		fmt.Fprintf(os.Stderr, "Id could not be converted in UploadBlock: %v\n", err)
 		return
 	}
 
-	block, found := SBC.GetBlock(int32(height), uriSplit[2])
+	block, found := SBC.GetBlock(int32(height), uriSplit[3])
 
 	if found {
 		blockJson, _ := p2.EncodeToJSON(block)
+		fmt.Println("Found block:", blockJson)
 		fmt.Fprint(w, blockJson)
+	} else {
+		fmt.Fprintf(os.Stderr, "Could not find requested block\n")
 	}
 }
 
@@ -279,7 +286,6 @@ func HeartBeatReceive(w http.ResponseWriter, r *http.Request) {
 
 	newBlock, err3 := p2.DecodeFromJson(hBeat.BlockJson)
 	if err3 != nil {
-		fmt.Println("hbeat json:\"", hBeat.BlockJson, "\"")
 		fmt.Fprintf(os.Stderr, "Error newBlock could not be decoded in hBeatReceive: %v\n", err3)
 		return
 	}
@@ -287,9 +293,9 @@ func HeartBeatReceive(w http.ResponseWriter, r *http.Request) {
 	//get all variables needed to compute the hash
 	parentHash := newBlock.Header.ParentHash
 	nonce := newBlock.Header.Nonce
-	transactionsHash := newBlock.Transactions.Root
-	balancesHash := newBlock.Balances.Root
-	concatInfo := parentHash + nonce +  balancesHash + transactionsHash
+	transactionsRoot := newBlock.Transactions.Root
+	balancesRoot := newBlock.Balances.Root
+	concatInfo := parentHash + nonce +  balancesRoot + transactionsRoot
 
 	//use that hash to check the proof of work
 	proofOfWork := sha3.Sum256([]byte(concatInfo))
@@ -298,31 +304,20 @@ func HeartBeatReceive(w http.ResponseWriter, r *http.Request) {
 	verified = strings.HasPrefix(powString, NUM_0s) //difficult here, because they both need to agree on the number of 0's
 
 	if verified {
+
 		//add the node that we get the heartbeat from, and it's peers
 		Peers.Add(hBeat.Addr, hBeat.Id, hBeat.PublicKey)
 		Peers.InjectPeerMapJson(hBeat.PeerMapJson, SELF_ADDR)
 
-		//no new block, do nothing else
-		if hBeat.IfNewBlock == false {
-			return
-		}
-
-		block, err4 := p2.DecodeFromJson(hBeat.BlockJson)
-		if err4 != nil {
-			fmt.Println("hbeat json:\"", hBeat.BlockJson, "\"")
-			fmt.Fprintf(os.Stderr, "Error newBlock could not be decoded in hBeatReceive: %v\n", err4)
-			return
-		}
-
 		//1
-		parentExists := SBC.CheckParentHash(block)
+		parentExists := SBC.CheckParentHash(newBlock)
 		if parentExists == false {
 			fmt.Println("Parent doesn't exist")
-			AskForBlock(block.Header.Height-1, block.Header.ParentHash)
+			AskForBlock(newBlock.Header.Height-1, newBlock.Header.ParentHash)
 		}
 
 		//2
-		SBC.Insert(block)
+		SBC.Insert(newBlock)
 
 		//3
 		hBeat.Hops = hBeat.Hops - 1
@@ -343,16 +338,18 @@ func HeartBeatReceive(w http.ResponseWriter, r *http.Request) {
 // Ask another server to return a block of certain height and hash
 func AskForBlock(height int32, hash string) {
 	fmt.Println("Asking for block")
+
 	urlVar := "/block/" + fmt.Sprint(height) + "/" + hash
 
 	peerMap := Peers.Copy()
 
 	for keyAddr := range peerMap {
 
-		resp, err := http.Get("http://" + keyAddr + urlVar)
+		resp, err := http.Get(keyAddr + urlVar)
 
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error in get request in AskForBlock: %v\n", err)
+			return
 		}
 
 		body, err2 := ioutil.ReadAll(resp.Body) // occasionally gives error, look into it
@@ -392,14 +389,16 @@ func ForwardHeartBeat(heartBeatData data.HeartBeatData) {
 
 		//not really needed, since the response doesn't matter
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error did not get response in forwardHearBeat: %v\n", err)
-		}
 
-		body, err2 := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error could not read response in forwardHearBeat: %v\n", err2)
+			fmt.Fprintf(os.Stderr, "Error did not get response in forwardHearBeat: %v\n", err)
 		} else {
-			fmt.Println("\tForwarded hBeat to ", keyAddr ," response is: ", string(body))
+
+			body, err2 := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error could not read response in forwardHearBeat: %v\n", err2)
+			} else {
+				fmt.Println("\tForwarded hBeat to ", keyAddr, " response is: ", string(body))
+			}
 		}
 
 	}
@@ -520,12 +519,13 @@ func StartTryingNonces() {
 			hBeat := data.NewHeartBeatData(true, Peers.GetSelfId(), blockJson, peersJson, SELF_ADDR, data.KeyToString(SELF_PUBLIC))
 
 			ForwardHeartBeat(hBeat)
-			fmt.Println("found valid nonce")
 
 			//should we add the new block to our own BC?
-			//generate new MPT, off block we just made
+				//Am I positive this is the way to do it?
+			SBC.Insert(newBlock)
 
 			//generates mpt, based on that latest block
+			currHead = SBC.GetLatestBlocks()[0] //doesn't directly set it to the block we created, in case someone else made a block faster
 			balances, transactions, err = GenerateNextMpt(newBlock)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error could not get mpts a second time in StartTryingNonces: %v\n", err)
@@ -566,7 +566,7 @@ func ReceiveTransaction(w http.ResponseWriter, r *http.Request){
 	var inPool = false
 	for _, txInPool:= range TRANSACTION_POOL{
 		if txInPool.HashTransaction() == tx.HashTransaction() {
-			fmt.Fprintf(os.Stderr, "Transaction already in pool in recieveTransaction\n" )
+			//fmt.Fprintf(os.Stderr, "Transaction already in pool in recieveTransaction\n" )
 			inPool = true
 			break
 		}
@@ -618,6 +618,9 @@ func ForwardTransaction(tx data.Transaction){
 }
 
 func GenerateNextMpt(currHead p2.Block) (p1.MerklePatriciaTrie, p1.MerklePatriciaTrie, error){
+
+	fmt.Println("Generating next mpt")
+
 	//helper function to generate next MPTs based off of a given block
 
 
@@ -641,7 +644,7 @@ func GenerateNextMpt(currHead p2.Block) (p1.MerklePatriciaTrie, p1.MerklePatrici
 	transactions := currHead.Transactions
 	balances := currHead.Balances
 
-	fmt.Println("Starting MPTs:","\n\tBalances:", balances.Order_nodes(), "\n\tTransactions:", transactions.Order_nodes())
+	//fmt.Println("Starting MPTs:","\n\tBalances:", balances.Order_nodes(), "\n\tTransactions:", transactions.Order_nodes())
 
 	//fmt.Println("Pool:")
 	//for ind, tx := range TRANSACTION_POOL {
@@ -653,14 +656,14 @@ func GenerateNextMpt(currHead p2.Block) (p1.MerklePatriciaTrie, p1.MerklePatrici
 		//Note: How many should we add? Just going to default to 1/2 of pool
 	var feeTotal float64
 	numTXsToAdd := len(TRANSACTION_POOL)/2.0 + 1
-	fmt.Println("Starting pool len:", len(TRANSACTION_POOL))
+	//fmt.Println("Starting pool len:", len(TRANSACTION_POOL))
 	for x:=0; x < numTXsToAdd; x++ {
 
 		//get front of pool (pop)
 		tx, tmpPool := TRANSACTION_POOL[0], TRANSACTION_POOL[1:] //pops first transaction, Note: must double check that pop actually works
 		TRANSACTION_POOL = tmpPool //updates pool
 
-		fmt.Println("Popped pool len:", len(TRANSACTION_POOL))
+		//fmt.Println("Popped pool len:", len(TRANSACTION_POOL))
 
 		//fmt.Println("Checking if pool was updated:", "\n\tActual Pool:", TRANSACTION_POOL, "\n\t   Tmp Pool:", tmpPool)
 
@@ -701,13 +704,13 @@ func GenerateNextMpt(currHead p2.Block) (p1.MerklePatriciaTrie, p1.MerklePatrici
 			return balances, transactions, err3
 		} else {
 			//only update value if no previous errors
-			fmt.Println("New bal:", strconv.FormatFloat(balFloat+feeTotal+BLOCK_REWARD, 'f', -1, 64))
-			fmt.Println("bal:", balFloat,"Fee:",feeTotal,"Reward:",BLOCK_REWARD)
+			//fmt.Println("New bal:", strconv.FormatFloat(balFloat+feeTotal+BLOCK_REWARD, 'f', -1, 64))
+			//fmt.Println("bal:", balFloat,"Fee:",feeTotal,"Reward:",BLOCK_REWARD)
 			balances.Insert(data.KeyToString(SELF_PUBLIC), strconv.FormatFloat(balFloat+feeTotal+BLOCK_REWARD, 'f', -1, 64)) //insert will update value, right? Must double check
 		}
 	}
 
-	fmt.Println("\nAt end of generate:","\n\tBalances:", balances.Order_nodes(), "\n\tTransactions:", transactions.Order_nodes())
+	//fmt.Println("\nAt end of generate:","\n\tBalances:", balances.Order_nodes(), "\n\tTransactions:", transactions.Order_nodes())
 
 	return balances, transactions, nil
 }

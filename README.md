@@ -11,15 +11,16 @@ Completed
 * Establish a base form of consensus (Nakamoto Consensus + Proof of Work)
 * Add public and private keys, and a way to transfer them between nodes
 * create two MPT’s, and add to block: one to store transactions, and one to store wallet balance
-
-In Progress
 * Add base functionality: wallet creations, and transfer between wallets
 * Add reward to creation of new canonical block
 * Add sum of fees to miner’s reward
 
+In Progress
+* Update PoW, so difficulty scales with number of transactions
+
 To Do
 * Update transactions to only become final after 3 blocks
-* Update PoW, so difficulty scales with number of transactions
+
 
 
 #### Usage ####
@@ -28,5 +29,4 @@ Requires as args the port number, and the id. For simplicity, I usually use port
 Starts with node1, with Id 01. All other nodes will connect to this on start to get the blockchain
 
 #### Known Bugs ####
-* Doesn't stop working on current block if new cannonical bolck is received
-* When it creates a new transaction, it does not add the transaction to it's own pool
+* Doesn't stop working on current block if new canonical block is received
