@@ -6,7 +6,7 @@ Create a cryptocurrency (ianCoin) which allows for creation of new accounts (wal
 
 #### Video link ####
 
-[Video Link](https://youtu.be/jetXXRv-OMI "IanCoin")
+[IanCoin Video Overview](https://youtu.be/jetXXRv-OMI "IanCoin")
 
 
 #### Goals ####
