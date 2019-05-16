@@ -63,7 +63,6 @@ func (tx *Transaction) HashTransaction() string {
 	str += tx.Destination +":"
 	str += fmt.Sprint(tx.Amount) +":"
 	str += fmt.Sprint(tx.Fee) +":"
-	//str += fmt.Sprint(tx.TimeToLive) +":" //note: should ttl really be part of the hash?
 	str += tx.Timestamp
 
 	sum := sha256.Sum256([]byte(str))
@@ -142,13 +141,18 @@ func (tx *Transaction) VerifyTransaction() bool {
 }
 
 func (tx *Transaction) AddTransactionToMPTs(balances p1.MerklePatriciaTrie, transactions p1.MerklePatriciaTrie) (p1.MerklePatriciaTrie, p1.MerklePatriciaTrie, error){
-	fmt.Println("---------------- Adding TX to MPTs ----------------")
+	//fmt.Println("---------------- Adding TX to MPTs ----------------")
+
 	// Function to add tx to both MPTs, if it can co through
 		// Only errors we are supposed to throw are: "transaction_is_double_spending" and "src_cannot_afford_tx"
 		// anything else means we have a serious problem
 
 		// note: does this need to be atomic? I think not, because this isn't done in parallel
 
+		//current issues:
+			//more instances of double spending than expected
+			//seems to be rounding balance
+			//balance can go negative for some reason
 
 	//first check if transaction is already in transactions, to prevent double spending
 	if transactions.Root == ""{
@@ -166,6 +170,8 @@ func (tx *Transaction) AddTransactionToMPTs(balances p1.MerklePatriciaTrie, tran
 
 		} else {
 			//definitely double spending
+
+			//fmt.Println("Checking double spending:", "\n\t  Curr Tx:", tx.String(), "\n\tTx in MPT:", getStr )
 			return p1.MerklePatriciaTrie{}, p1.MerklePatriciaTrie{}, errors.New("transaction_is_double_spending")
 		}
 	}
@@ -178,7 +184,8 @@ func (tx *Transaction) AddTransactionToMPTs(balances p1.MerklePatriciaTrie, tran
 		return p1.MerklePatriciaTrie{}, p1.MerklePatriciaTrie{}, errors.New("could_not_get_src_balance")
 	} else {
 		//converts string to float
-		srcBalFloat, err3 := strconv.ParseFloat(srcCurrBal, 64)
+		var err3 error
+		srcBalFloat, err3 = strconv.ParseFloat(srcCurrBal, 64)
 
 		if err3 != nil{
 			return p1.MerklePatriciaTrie{}, p1.MerklePatriciaTrie{}, errors.New("could_not_convert_src_balance")
@@ -188,14 +195,15 @@ func (tx *Transaction) AddTransactionToMPTs(balances p1.MerklePatriciaTrie, tran
 		}
 	}
 
-	//third, update balance of both accounts
+	//fmt.Println("src bal:", srcBalFloat, "Amount:", tx.Amount, "Fee:", tx.Fee)
 
+	//third, update balance of both accounts
 	dstCurrBal, err3 := balances.Get(tx.Destination)
 	if err3 != nil {
 		if err3.Error() == "reached_invalid_leaf" {
 			//must add dst to balances mpt
-			balances.Insert(tx.Source, fmt.Sprint(srcBalFloat - (tx.Fee+tx.Amount)) ) //reduce source balance
-			balances.Insert(tx.Destination, fmt.Sprint(tx.Amount) ) //create dst and set its balance
+			balances.Insert(tx.Source, strconv.FormatFloat(srcBalFloat - (tx.Fee+tx.Amount), 'f', -1, 64)) //reduce source balance
+			balances.Insert(tx.Destination, strconv.FormatFloat(tx.Amount, 'f', -1, 64) ) //create dst and set its balance
 
 		} else {
 				//if mpt.get has unexpected error
@@ -210,27 +218,35 @@ func (tx *Transaction) AddTransactionToMPTs(balances p1.MerklePatriciaTrie, tran
 			return p1.MerklePatriciaTrie{}, p1.MerklePatriciaTrie{}, errors.New("could_not_convert_dts_balance")
 		} else {
 			//dst exists, must update both balances
-			balances.Insert(tx.Source, fmt.Sprint( srcBalFloat - (tx.Fee+tx.Amount)) ) 		//reduce source balance
-			balances.Insert(tx.Destination, fmt.Sprint( dstBalFloat +tx.Amount) )	//create dst and set its balance
+			balances.Insert(tx.Source, strconv.FormatFloat(srcBalFloat - (tx.Fee+tx.Amount), 'f', -1, 64)) 		//reduce source balance
+			balances.Insert(tx.Destination, strconv.FormatFloat(dstBalFloat + tx.Amount, 'f', -1, 64))	//create dst and set its balance
 		}
 	}
 
 	//add transaction to transactions mpt
-	txJson, err5 := tx.TransactionToJson()
-	if err5 != nil{
-		return p1.MerklePatriciaTrie{}, p1.MerklePatriciaTrie{}, errors.New("could_not_convert_tx_to_json")
-	}
-
-	transactions.Insert(tx.HashTransaction(), txJson)
+	transactions.Insert(tx.HashTransaction(), tx.String())
 
 	//fmt.Println("MPTs after TXs added:","\n\tBalances:", balances.Order_nodes(), "\n\tTransactions:", transactions.Order_nodes())
+	//fmt.Println("---------------- Finished Adding TX to MPTs ----------------")
 
-	fmt.Println("---------------- Finished Adding TX to MPTs ----------------")
 	//if everything above works, return updated MPTs with no error
 	return balances, transactions, nil
 
 
 
+}
+
+func (tx *Transaction) String() string{
+	res := ""
+
+	res += "Source:" + tx.Source +",   "
+	res += "Destination:" + tx.Destination +",   "
+	res += "Amount:" + fmt.Sprint(tx.Amount) +",   "
+	res += "Fee:" + fmt.Sprint(tx.Fee) +",   "
+	res += "Timestamp:" + tx.Timestamp +",   "
+	res += "Signature:" + tx.Signature
+
+	return res
 }
 
 func (tx *Transaction) TransactionToJson() (string, error){
@@ -255,8 +271,3 @@ func DecodeTransactionFromJson(jsonStr string) (Transaction, error){
 	return res, nil
 
 }
-
-
-
-
-

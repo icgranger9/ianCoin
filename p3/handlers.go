@@ -103,7 +103,7 @@ func Download() {
 		balances.Insert(data.KeyToString(SELF_PUBLIC), fmt.Sprint(BLOCK_REWARD)) //gives initial node a block reward, so we start with some money in the system
 
 		var newBlock p2.Block
-		newBlock.Initial(0, "", "", transactions, balances)
+		newBlock.Initial(0, "", "", balances, transactions)
 
 		SBC.Insert(newBlock)
 
@@ -270,6 +270,8 @@ func HeartBeatReceive(w http.ResponseWriter, r *http.Request) {
 	//no new block, do nothing else
 	if hBeat.IfNewBlock == false {
 		return
+	} else {
+		fmt.Println("Received new block")
 	}
 
 	//verify heartbeat
@@ -277,6 +279,7 @@ func HeartBeatReceive(w http.ResponseWriter, r *http.Request) {
 
 	newBlock, err3 := p2.DecodeFromJson(hBeat.BlockJson)
 	if err3 != nil {
+		fmt.Println("hbeat json:\"", hBeat.BlockJson, "\"")
 		fmt.Fprintf(os.Stderr, "Error newBlock could not be decoded in hBeatReceive: %v\n", err3)
 		return
 	}
@@ -286,7 +289,7 @@ func HeartBeatReceive(w http.ResponseWriter, r *http.Request) {
 	nonce := newBlock.Header.Nonce
 	transactionsHash := newBlock.Transactions.Root
 	balancesHash := newBlock.Balances.Root
-	concatInfo := parentHash + nonce + transactionsHash + balancesHash
+	concatInfo := parentHash + nonce +  balancesHash + transactionsHash
 
 	//use that hash to check the proof of work
 	proofOfWork := sha3.Sum256([]byte(concatInfo))
@@ -306,7 +309,8 @@ func HeartBeatReceive(w http.ResponseWriter, r *http.Request) {
 
 		block, err4 := p2.DecodeFromJson(hBeat.BlockJson)
 		if err4 != nil {
-			fmt.Fprintf(os.Stderr, "Error newBlock could not be decoded in hBeatReceive: %v\n", err4) //note: don't we already do this up by err3?
+			fmt.Println("hbeat json:\"", hBeat.BlockJson, "\"")
+			fmt.Fprintf(os.Stderr, "Error newBlock could not be decoded in hBeatReceive: %v\n", err4)
 			return
 		}
 
@@ -327,7 +331,7 @@ func HeartBeatReceive(w http.ResponseWriter, r *http.Request) {
 		}
 
 		//write simple response
-		w.Write([]byte("\tBlock received by: " + SELF_ADDR))
+		w.Write([]byte("\tBlock received"))
 
 		fmt.Println("Finished Receive heart beat")
 	} else {
@@ -492,6 +496,7 @@ func StartTryingNonces() {
 
 
 	for calculateNonce {
+		//Note: should switch to latest block if a new one is received
 
 
 		//generate nonce
@@ -500,7 +505,7 @@ func StartTryingNonces() {
 		//test nonce
 		validNonce := false
 
-		concatInfo := currHead.Header.Hash + nonce + transactions.Root + balances.Root
+		concatInfo := currHead.Header.Hash + nonce + balances.Root + transactions.Root
 		proofOfWork := sha3.Sum256([]byte(concatInfo))
 		powString := hex.EncodeToString(proofOfWork[:])
 
@@ -508,7 +513,7 @@ func StartTryingNonces() {
 
 		if validNonce {
 
-			newBlock := SBC.GenBlock(transactions, balances, nonce)
+			newBlock := SBC.GenBlock(balances, transactions, nonce)
 			blockJson, _ := p2.EncodeToJSON(newBlock)
 			peersJson, _ := Peers.PeerMapToJson()
 
@@ -638,23 +643,32 @@ func GenerateNextMpt(currHead p2.Block) (p1.MerklePatriciaTrie, p1.MerklePatrici
 
 	fmt.Println("Starting MPTs:","\n\tBalances:", balances.Order_nodes(), "\n\tTransactions:", transactions.Order_nodes())
 
+	//fmt.Println("Pool:")
+	//for ind, tx := range TRANSACTION_POOL {
+	//	fmt.Println("\t",ind+1," tx's sig is:", tx.Signature)
+	//}
+
+
 	//add some transactions
 		//Note: How many should we add? Just going to default to 1/2 of pool
 	var feeTotal float64
 	numTXsToAdd := len(TRANSACTION_POOL)/2.0 + 1
-	fmt.Println("nums to add:", numTXsToAdd, "with tPool of len", len(TRANSACTION_POOL))
+	fmt.Println("Starting pool len:", len(TRANSACTION_POOL))
 	for x:=0; x < numTXsToAdd; x++ {
 
 		//get front of pool (pop)
-		tx, tmpPool := TRANSACTION_POOL[0], TRANSACTION_POOL[:1] //pops first transaction
+		tx, tmpPool := TRANSACTION_POOL[0], TRANSACTION_POOL[1:] //pops first transaction, Note: must double check that pop actually works
 		TRANSACTION_POOL = tmpPool //updates pool
+
+		fmt.Println("Popped pool len:", len(TRANSACTION_POOL))
+
+		//fmt.Println("Checking if pool was updated:", "\n\tActual Pool:", TRANSACTION_POOL, "\n\t   Tmp Pool:", tmpPool)
 
 		//handle adding to mpt's
 		resBalances, resTXs, err := tx.AddTransactionToMPTs(balances, transactions)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error could not add transaction in GenerateNextMpt: %v\n", err)
-			fmt.Println("\nInvalid MPTs:","\n\tBalances:", resBalances.Order_nodes(), "\n\tTransactions:", resTXs.Order_nodes())
-			break //is this the best response?
+			//break //is this the best response?
 		} else {
 			feeTotal += tx.Fee
 			transactions = resTXs
@@ -664,6 +678,9 @@ func GenerateNextMpt(currHead p2.Block) (p1.MerklePatriciaTrie, p1.MerklePatrici
 		//what should we do if the tx can't go through? drop, or push to back of the pool?
 			//currently just drop it
 	}
+
+	//fmt.Println("\nDone adding tx's:","\n\tBalances:", balances.Order_nodes(), "\n\tTransactions:", transactions.Order_nodes())
+
 
 	//add x coins to self balance
 		//Note: How can we do this well? Does it need a signature, or any verification?
@@ -684,7 +701,9 @@ func GenerateNextMpt(currHead p2.Block) (p1.MerklePatriciaTrie, p1.MerklePatrici
 			return balances, transactions, err3
 		} else {
 			//only update value if no previous errors
-			balances.Insert(data.KeyToString(SELF_PUBLIC), fmt.Sprint(balFloat+feeTotal+BLOCK_REWARD)) //insert will update value, right? Must double check
+			fmt.Println("New bal:", strconv.FormatFloat(balFloat+feeTotal+BLOCK_REWARD, 'f', -1, 64))
+			fmt.Println("bal:", balFloat,"Fee:",feeTotal,"Reward:",BLOCK_REWARD)
+			balances.Insert(data.KeyToString(SELF_PUBLIC), strconv.FormatFloat(balFloat+feeTotal+BLOCK_REWARD, 'f', -1, 64)) //insert will update value, right? Must double check
 		}
 	}
 
